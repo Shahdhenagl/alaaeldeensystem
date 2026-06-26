@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
+import { unitMinQty, unitStep } from '../utils/units';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface Product {
@@ -11,6 +12,7 @@ export interface Product {
   sale_price: number;
   stock_quantity: number;
   category_id: string;
+  unit: string; // وحدة المنتج: قطعة / كيلو / جرام / لتر ... (المخزون والسعر بهذه الوحدة)
   is_hidden?: boolean; // إخفاء المنتج من الكاشير دون حذفه
 }
 
@@ -301,6 +303,7 @@ interface CashierStore {
 
   // Cart
   addToCart: (product: Product) => void;
+  addToCartQty: (product: Product, quantity: number) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   updatePrice: (productId: string, price: number) => void;
@@ -681,6 +684,7 @@ export const useStore = create<CashierStore>((set, get) => ({
             sale_price: i.sale_price as number,
             stock_quantity: (prod.stock_quantity as number) ?? 0,
             category_id: (prod.category_id as string) ?? '',
+            unit: (prod.unit as string) ?? 'قطعة',
             quantity: i.quantity as number,
             returned_quantity: (i.returned_quantity as number) ?? 0,
             refunded_amount: (i.refunded_amount as number) ?? 0,
@@ -726,6 +730,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         categories: (categoriesRes.data ?? []) as Category[],
         products: (productsRes.data ?? []).map((p: any) => ({
           ...p,
+          unit: p.unit ?? 'قطعة',
           average_purchase_price: p.average_purchase_price ?? p.purchase_price ?? 0
         })) as Product[],
         customers,
@@ -819,6 +824,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         set({
           products: data.map((p: any) => ({
             ...p,
+            unit: p.unit ?? 'قطعة',
             average_purchase_price: p.average_purchase_price ?? p.purchase_price ?? 0
           })) as Product[]
         });
@@ -978,12 +984,29 @@ export const useStore = create<CashierStore>((set, get) => ({
   addToCart: (product) =>
     set((state) => {
       if (product.stock_quantity <= 0) return state;
+      const step = unitStep(product.unit); // 1 للقطعة، 0.25 للوحدات الكسرية
       const existing = state.cart.find((i) => i.id === product.id);
       if (existing) {
         if (existing.quantity >= product.stock_quantity) return state;
-        return { cart: state.cart.map((i) => (i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i)) };
+        const next = Math.min(existing.quantity + step, product.stock_quantity);
+        return { cart: state.cart.map((i) => (i.id === product.id ? { ...i, quantity: next } : i)) };
       }
-      return { cart: [...state.cart, { ...product, quantity: 1, returned_quantity: 0 }] };
+      const first = Math.min(step, product.stock_quantity);
+      return { cart: [...state.cart, { ...product, quantity: first, returned_quantity: 0 }] };
+    }),
+
+  // إضافة منتج للسلة بكمية محددة (تُستخدم لإدخال الوزن من شاشة الكاشير)
+  addToCartQty: (product, quantity) =>
+    set((state) => {
+      if (product.stock_quantity <= 0 || quantity <= 0) return state;
+      const min = unitMinQty(product.unit);
+      const existing = state.cart.find((i) => i.id === product.id);
+      if (existing) {
+        const next = Math.max(min, Math.min(existing.quantity + quantity, product.stock_quantity));
+        return { cart: state.cart.map((i) => (i.id === product.id ? { ...i, quantity: next } : i)) };
+      }
+      const qty = Math.max(min, Math.min(quantity, product.stock_quantity));
+      return { cart: [...state.cart, { ...product, quantity: qty, returned_quantity: 0 }] };
     }),
 
   removeFromCart: (productId) => set((state) => ({ cart: state.cart.filter((i) => i.id !== productId) })),
@@ -992,7 +1015,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     set((state) => {
       const product = state.products.find((p) => p.id === productId);
       if (!product) return state;
-      const validQty = Math.max(1, Math.min(quantity, product.stock_quantity));
+      const validQty = Math.max(unitMinQty(product.unit), Math.min(quantity, product.stock_quantity));
       return { cart: state.cart.map((i) => (i.id === productId ? { ...i, quantity: validQty } : i)) };
     }),
 
@@ -1895,6 +1918,7 @@ export const useStore = create<CashierStore>((set, get) => ({
           sale_price: i.sale_price as number,
           stock_quantity: (prod.stock_quantity as number) ?? 0,
           category_id: (prod.category_id as string) ?? '',
+          unit: (prod.unit as string) ?? 'قطعة',
           quantity: i.quantity as number,
           returned_quantity: (i.returned_quantity as number) ?? 0,
           refunded_amount: (i.refunded_amount as number) ?? 0,
@@ -2265,6 +2289,7 @@ export const useStore = create<CashierStore>((set, get) => ({
           average_purchase_price: item.costPrice,
           sale_price: item.salePrice,
           stock_quantity: 99999, // dummy value
+          unit: 'قطعة',
           quantity: 1,
           returned_quantity: 0
         }));
@@ -2478,6 +2503,7 @@ setupRealtime: () => {
               sale_price: i.sale_price,
               stock_quantity: i.products?.stock_quantity || 0,
               category_id: i.products?.category_id || '',
+              unit: i.products?.unit || 'قطعة',
               quantity: i.quantity,
               returned_quantity: i.returned_quantity || 0,
               refunded_amount: i.refunded_amount || 0
@@ -2533,12 +2559,14 @@ setupRealtime: () => {
               const p = newRecord as any;
               updatedProducts = [{
                 ...p,
+                unit: p.unit ?? 'قطعة',
                 average_purchase_price: p.average_purchase_price ?? p.purchase_price ?? 0
               } as Product, ...updatedProducts];
             } else if (eventType === 'UPDATE') {
               updatedProducts = updatedProducts.map((p) =>
-                p.id === (newRecord as any).id ? { 
+                p.id === (newRecord as any).id ? {
                   ...(newRecord as any),
+                  unit: (newRecord as any).unit ?? 'قطعة',
                   average_purchase_price: (newRecord as any).average_purchase_price ?? (newRecord as any).purchase_price ?? 0
                 } as Product : p
               );

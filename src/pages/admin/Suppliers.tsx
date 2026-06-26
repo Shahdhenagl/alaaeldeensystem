@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore';
 import type { PurchaseItem, Product } from '../../store/useStore';
 import { Users, Search, Plus, Edit2, Trash2, Phone, MapPin, Calendar, ShoppingCart, FileText, X, ChevronDown, Printer, Eye } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
+import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 
 function ProductSearchSelect({ 
   value, 
@@ -115,7 +116,7 @@ function ProductSearchSelect({
 }
 
 export default function Suppliers() {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, storeSettings, purchaseInvoices, addPurchaseInvoice, updatePurchaseInvoice, products } = useStore();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, storeSettings, purchaseInvoices, addPurchaseInvoice, updatePurchaseInvoice, products, orders } = useStore();
   const [activeTab, setActiveTab] = useState<'suppliers' | 'invoices'>('suppliers');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchQueryInvoices, setSearchQueryInvoices] = useState('');
@@ -147,7 +148,7 @@ export default function Suppliers() {
   // Quick Add Product State
   const [showQuickProductModal, setShowQuickProductModal] = useState(false);
   const [quickProductIndex, setQuickProductIndex] = useState<number | null>(null);
-  const [quickProductData, setQuickProductData] = useState({ name: '', category_id: '', sale_price: '', barcode: '' });
+  const [quickProductData, setQuickProductData] = useState({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة' });
   const { categories, addProduct } = useStore();
 
   const filteredSuppliers = suppliers.filter(s =>
@@ -190,7 +191,7 @@ export default function Suppliers() {
       setIsSaving(true);
       const items: PurchaseItem[] = validItems.map(i => ({
         product_id: i.product_id,
-        quantity: parseInt(i.quantity),
+        quantity: parseFloat(i.quantity),
         purchase_price: parseFloat(i.purchase_price),
       }));
 
@@ -283,7 +284,8 @@ export default function Suppliers() {
         sale_price: parseFloat(quickProductData.sale_price) || 0,
         purchase_price: 0,
         stock_quantity: 0,
-        average_purchase_price: 0
+        average_purchase_price: 0,
+        unit: quickProductData.unit || 'قطعة'
       };
       
       const createdProduct = await addProduct(newProd);
@@ -299,7 +301,7 @@ export default function Suppliers() {
       }
       
       setShowQuickProductModal(false);
-      setQuickProductData({ name: '', category_id: '', sale_price: '', barcode: '' });
+      setQuickProductData({ name: '', category_id: '', sale_price: '', barcode: '', unit: 'قطعة' });
     } catch (err) {
       alert('خطأ في إضافة المنتج');
     } finally {
@@ -741,20 +743,27 @@ export default function Suppliers() {
                     </button>
                   </div>
                   <div className="space-y-3">
-                    {invItems.map((item, idx) => (
+                    {invItems.map((item, idx) => {
+                      const rowProduct = products.find(p => p.id === item.product_id);
+                      const rowUnit = rowProduct?.unit || 'قطعة';
+                      const rowFractional = isFractionalUnit(rowUnit);
+                      return (
                       <div key={idx} className="flex gap-2 items-center bg-slate-50 rounded-2xl p-3 border border-slate-100">
                         <ProductSearchSelect
                           value={item.product_id}
                           onChange={val => updateInvRow(idx, 'product_id', val)}
                           products={products}
                         />
+                        <div className="relative w-28 shrink-0">
+                          <input
+                            type="number" min="0" step={rowFractional ? '0.001' : '1'} placeholder="الكمية"
+                            value={item.quantity} onChange={e => updateInvRow(idx, 'quantity', e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-12 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium text-center"
+                          />
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">{getUnitConfig(rowUnit).label}</span>
+                        </div>
                         <input
-                          type="number" min="1" placeholder="الكمية"
-                          value={item.quantity} onChange={e => updateInvRow(idx, 'quantity', e.target.value)}
-                          className="w-24 bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium text-center"
-                        />
-                        <input
-                          type="number" min="0" step="0.01" placeholder="سعر الشراء"
+                          type="number" min="0" step="0.01" placeholder={`سعر شراء الـ${getUnitConfig(rowUnit).label}`}
                           value={item.purchase_price} onChange={e => updateInvRow(idx, 'purchase_price', e.target.value)}
                           className="w-32 bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium text-center"
                         />
@@ -764,7 +773,8 @@ export default function Suppliers() {
                           </button>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -835,6 +845,43 @@ export default function Suppliers() {
         const totalPurchases = supplierInvoices.reduce((sum, inv) => sum + inv.total, 0);
         const totalPaid = supplierInvoices.reduce((sum, inv) => sum + inv.paid_amount, 0);
         const totalDebt = totalPurchases - totalPaid;
+
+        // ── إحصائيات المنتجات المشتراة من هذا المورد ──
+        const productStats = (() => {
+          const map = new Map<string, { product_id: string; totalQty: number; totalCost: number; lastPrice: number; lastDate: string }>();
+          // ترتيب تصاعدي بالتاريخ حتى يكون آخر سعر هو الأحدث
+          const sorted = [...supplierInvoices].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+          for (const inv of sorted) {
+            for (const it of (inv.items || [])) {
+              if (!it.product_id) continue;
+              let s = map.get(it.product_id);
+              if (!s) { s = { product_id: it.product_id, totalQty: 0, totalCost: 0, lastPrice: 0, lastDate: '' }; map.set(it.product_id, s); }
+              const q = Number(it.quantity) || 0;
+              s.totalQty += q;
+              s.totalCost += q * (Number(it.purchase_price) || 0);
+              s.lastPrice = Number(it.purchase_price) || 0;
+              s.lastDate = inv.created_at;
+            }
+          }
+          return Array.from(map.values()).map(s => {
+            const product = products.find(p => p.id === s.product_id);
+            let sold = 0;
+            for (const o of orders) {
+              if (o.is_deleted || o.type !== 'sale') continue;
+              for (const oi of (o.items || [])) {
+                if (oi.id === s.product_id) sold += (Number(oi.quantity) || 0) - (Number(oi.returned_quantity) || 0);
+              }
+            }
+            return {
+              ...s,
+              name: product?.name || 'منتج محذوف',
+              unit: product?.unit || 'قطعة',
+              avgPrice: s.totalQty > 0 ? s.totalCost / s.totalQty : 0,
+              currentStock: product?.stock_quantity ?? 0,
+              sold
+            };
+          }).sort((a, b) => b.totalQty - a.totalQty);
+        })();
 
         const handlePayDebt = async () => {
           const splitPayments = {
@@ -941,6 +988,48 @@ export default function Suppliers() {
                   </div>
                 )}
 
+                {/* Per-product purchase statistics */}
+                <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden mb-8">
+                  <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+                    <h3 className="font-black text-slate-800 flex items-center gap-2"><ShoppingCart size={18} style={{ color: tc }} /> الأصناف المشتراة من هذا المورد</h3>
+                    <span className="text-xs font-bold text-slate-400">{productStats.length} صنف</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-sm">
+                      <thead className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
+                        <tr>
+                          <th className="p-4">المنتج</th>
+                          <th className="p-4 text-center">الوحدة</th>
+                          <th className="p-4 text-center">الكمية المشتراة</th>
+                          <th className="p-4 text-center">متوسط سعر الشراء</th>
+                          <th className="p-4 text-center">آخر سعر شراء</th>
+                          <th className="p-4 text-center">المتاح بالمخزون</th>
+                          <th className="p-4 text-center">المباع</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {productStats.length === 0 ? (
+                          <tr><td colSpan={7} className="p-10 text-center text-slate-400 font-bold">لا توجد أصناف مشتراة من هذا المورد</td></tr>
+                        ) : (
+                          productStats.map(s => (
+                            <tr key={s.product_id} className="hover:bg-slate-50/50 transition">
+                              <td className="p-4 font-bold text-slate-800">{s.name}</td>
+                              <td className="p-4 text-center">
+                                <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{getUnitConfig(s.unit).label}</span>
+                              </td>
+                              <td className="p-4 text-center font-bold text-slate-700">{formatQty(s.totalQty, s.unit)}</td>
+                              <td className="p-4 text-center font-bold text-indigo-600">{s.avgPrice.toFixed(2)} {storeSettings.currency}</td>
+                              <td className="p-4 text-center font-bold text-orange-500">{s.lastPrice.toFixed(2)} {storeSettings.currency}</td>
+                              <td className="p-4 text-center font-bold text-emerald-600">{formatQty(s.currentStock, s.unit)}</td>
+                              <td className="p-4 text-center font-bold text-slate-500">{formatQty(s.sold, s.unit)}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
                 {/* Transactions Table */}
                 <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden">
                   <div className="p-6 border-b border-slate-50">
@@ -1010,9 +1099,15 @@ export default function Suppliers() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">سعر البيع</label>
+                  <label className="block text-xs font-bold text-slate-500 mb-1">سعر البيع لكل {getUnitConfig(quickProductData.unit).label}</label>
                   <input type="number" step="0.01" value={quickProductData.sale_price} onChange={e => setQuickProductData({...quickProductData, sale_price: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="0.00" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">وحدة البيع</label>
+                <select value={quickProductData.unit} onChange={e => setQuickProductData({...quickProductData, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm">
+                  {UNIT_OPTIONS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-1">الباركود (تلقائي)</label>

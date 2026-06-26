@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useStore } from '../store/useStore';
-import { ShoppingCart, Search, Plus, Minus, Trash2, Banknote, RefreshCcw, Moon, Sun, ArrowRightLeft, X, Printer, CreditCard, Smartphone, Zap, ScanLine, Camera, Box, Check, ChevronRight, ChevronLeft, FileText, MessageSquare, Send, Wallet } from 'lucide-react';
+import { useStore, type Product } from '../store/useStore';
+import { ShoppingCart, Search, Plus, Minus, Trash2, Banknote, RefreshCcw, Moon, Sun, ArrowRightLeft, X, Printer, CreditCard, Smartphone, Zap, ScanLine, Camera, Box, Check, ChevronRight, ChevronLeft, FileText, MessageSquare, Send, Wallet, Edit2 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { normalizeArabic } from '../utils/textUtils';
+import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense } = useStore();
   const navigate = useNavigate();
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -74,6 +75,42 @@ export default function POS() {
     }
   };
 
+  // ── إدخال الوزن للمنتجات التي تُباع بالوزن (كيلو/جرام/لتر...) ──
+  const [weightProduct, setWeightProduct] = useState<Product | null>(null);
+  const [weightUnitInput, setWeightUnitInput] = useState(''); // الكمية بالوحدة الأساسية
+  const [weightSubInput, setWeightSubInput] = useState('');   // الكمية بالوحدة الفرعية (جرام...)
+
+  // فتح نافذة الوزن أو الإضافة المباشرة حسب نوع وحدة المنتج
+  const handleAddProduct = (product: Product) => {
+    if (isFractionalUnit(product.unit)) {
+      setWeightProduct(product);
+      setWeightUnitInput('');
+      setWeightSubInput('');
+    } else {
+      addToCart(product);
+    }
+  };
+
+  // الكمية النهائية (بالوحدة الأساسية) المحسوبة من مدخلات نافذة الوزن
+  const computeWeightQty = (): number => {
+    if (!weightProduct) return 0;
+    const cfg = getUnitConfig(weightProduct.unit);
+    if (weightSubInput && cfg.subPerUnit) {
+      return (parseFloat(weightSubInput) || 0) / cfg.subPerUnit;
+    }
+    return parseFloat(weightUnitInput) || 0;
+  };
+
+  const confirmWeight = () => {
+    if (!weightProduct) return;
+    const qty = computeWeightQty();
+    if (qty <= 0) return;
+    addToCartQty(weightProduct, qty);
+    setWeightProduct(null);
+    setWeightUnitInput('');
+    setWeightSubInput('');
+  };
+
   const handleBarcodeScan = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -83,7 +120,7 @@ export default function POS() {
       const product = products.find(p => p.barcode === code);
       if (product) {
         playSuccessSound();
-        addToCart(product);
+        handleAddProduct(product);
         setBarcodeInput('');
         setScanStatus('success');
         setTimeout(() => setScanStatus('idle'), 1000);
@@ -293,8 +330,15 @@ export default function POS() {
 
   const handleConfirmScanAdd = () => {
     if (scannedProduct) {
-      for (let i = 0; i < scanQty; i++) {
-        addToCart(scannedProduct);
+      if (isFractionalUnit(scannedProduct.unit)) {
+        // منتج بالوزن: افتح نافذة إدخال الوزن بدل تكرار الإضافة
+        setWeightProduct(scannedProduct as Product);
+        setWeightUnitInput('');
+        setWeightSubInput('');
+      } else {
+        for (let i = 0; i < scanQty; i++) {
+          addToCart(scannedProduct);
+        }
       }
       setScannedProduct(null);
       if (html5QrCode && html5QrCode.getState() === 3) {
@@ -417,7 +461,7 @@ export default function POS() {
       `<tr>
         <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;color:#666;">${index + 1}</td>
         <td style="padding:10px 4px;border-bottom:1px solid #eee;font-weight:900;font-size:14px;">${item.name}</td>
-        <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;">${item.quantity}</td>
+        <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;">${formatQty(item.quantity, item.unit)}</td>
         <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;font-weight:bold;">${item.sale_price.toFixed(2)}</td>
         <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:left;font-weight:black;font-size:15px;">${(item.sale_price * item.quantity).toFixed(2)}</td>
       </tr>`
@@ -914,7 +958,7 @@ export default function POS() {
                     onClick={() => {
                       const sendWhatsApp = (invId: string, customerPhone: string, orderDetails: any) => {
                         if (!customerPhone.trim()) return;
-                        let itemsText = orderDetails.cart.map((item: any) => `• ${item.name} (عدد: ${item.quantity}) - ${(item.sale_price * item.quantity).toFixed(2)} ${storeSettings.currency}`).join('\n');
+                        let itemsText = orderDetails.cart.map((item: any) => `• ${item.name} (${formatQty(item.quantity, item.unit)}) - ${(item.sale_price * item.quantity).toFixed(2)} ${storeSettings.currency}`).join('\n');
                         const publicBaseUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
                           ? 'https://cashier-branch3.vercel.app'
                           : window.location.origin;
@@ -1527,11 +1571,11 @@ export default function POS() {
               return (
                 <div
                   key={product.id}
-                  onClick={() => addToCart(product)}
+                  onClick={() => !isOutOfStock && handleAddProduct(product)}
                   className={`bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between border border-gray-100 dark:border-slate-700 ring-1 ring-black/5 dark:ring-white/5 relative overflow-hidden group ${isOutOfStock ? 'opacity-60 cursor-not-allowed grayscale' : ''}`}
                 >
                   <div className={`absolute top-0 right-0 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
-                    {isOutOfStock ? 'نفذت' : `${product.stock_quantity} قطعة`}
+                    {isOutOfStock ? 'نفذت' : formatQty(product.stock_quantity, product.unit)}
                   </div>
 
                   <div className="pt-2">
@@ -1550,7 +1594,7 @@ export default function POS() {
                   </div>
                   <div className="flex items-end justify-between mt-3 pt-2 border-t border-gray-100 dark:border-slate-700">
                     <div>
-                      <p className="text-[10px] text-slate-400 font-medium mb-0.5">سعر البيع</p>
+                      <p className="text-[10px] text-slate-400 font-medium mb-0.5">سعر البيع / {getUnitConfig(product.unit).label}</p>
                       <span style={{ color: storeSettings.themeColor }} className="text-lg font-black dark:opacity-90">{product.sale_price} <span className="text-xs text-gray-500 dark:text-gray-400">{storeSettings.currency}</span></span>
                     </div>
                     <div style={!isOutOfStock ? { backgroundColor: storeSettings.themeColor + '15', color: storeSettings.themeColor, borderColor: storeSettings.themeColor + '30' } : {}} className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all ${isOutOfStock ? 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-slate-700 dark:border-slate-600' : ''}`}>
@@ -1665,7 +1709,7 @@ export default function POS() {
                 <div className="flex items-center justify-between pt-2 mt-0.5 border-t border-gray-50 dark:border-slate-700/50">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">سعر الوحدة:</label>
+                      <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">سعر {getUnitConfig(item.unit).label}:</label>
                       <input
                         type="number"
                         dir="ltr"
@@ -1679,15 +1723,26 @@ export default function POS() {
                     </span>
                   </div>
 
-                  <div className="flex items-center bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-0.5 shadow-inner">
-                    <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-md text-gray-600 dark:text-gray-300 transition-colors shadow-sm">
-                      <Minus size={14} strokeWidth={3} />
+                  {isFractionalUnit(item.unit) ? (
+                    <button
+                      onClick={() => { setWeightProduct(item); setWeightUnitInput(String(item.quantity)); setWeightSubInput(''); }}
+                      className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-1.5 text-amber-700 dark:text-amber-300 font-bold text-sm shadow-inner hover:bg-amber-100 transition"
+                      title="تعديل الوزن"
+                    >
+                      <span>{formatQty(item.quantity, item.unit)}</span>
+                      <Edit2 size={13} strokeWidth={2.5} />
                     </button>
-                    <span className="w-8 text-center text-sm font-bold dark:text-white">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-md text-gray-600 dark:text-gray-300 transition-colors shadow-sm">
-                      <Plus size={14} strokeWidth={3} />
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex items-center bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-0.5 shadow-inner">
+                      <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-md text-gray-600 dark:text-gray-300 transition-colors shadow-sm">
+                        <Minus size={14} strokeWidth={3} />
+                      </button>
+                      <span className="w-8 text-center text-sm font-bold dark:text-white">{item.quantity}</span>
+                      <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-600 rounded-md text-gray-600 dark:text-gray-300 transition-colors shadow-sm">
+                        <Plus size={14} strokeWidth={3} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -1933,6 +1988,80 @@ export default function POS() {
           </div>
         </div>
       )}
+
+      {/* ── نافذة إدخال الوزن/الكمية للمنتجات المباعة بالوزن ── */}
+      {weightProduct && (() => {
+        const cfg = getUnitConfig(weightProduct.unit);
+        const qty = computeWeightQty();
+        const lineTotal = qty * weightProduct.sale_price;
+        const overStock = qty > weightProduct.stock_quantity;
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4" onClick={() => setWeightProduct(null)}>
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-sm animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between p-5 border-b border-gray-100 dark:border-slate-700">
+                <div>
+                  <h3 className="font-black text-lg text-slate-800 dark:text-white leading-tight">{weightProduct.name}</h3>
+                  <p className="text-sm text-emerald-600 font-bold mt-1">{weightProduct.sale_price} {storeSettings.currency} / {cfg.label}</p>
+                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">المتاح: {formatQty(weightProduct.stock_quantity, weightProduct.unit)}</p>
+                </div>
+                <button onClick={() => setWeightProduct(null)} className="text-slate-400 hover:text-slate-600 bg-slate-50 dark:bg-slate-700 p-2 rounded-xl"><X size={18} /></button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">الكمية بالـ {cfg.label}</label>
+                  <input
+                    type="number" dir="ltr" min="0" step="0.001" autoFocus
+                    value={weightUnitInput}
+                    onChange={(e) => { setWeightUnitInput(e.target.value); setWeightSubInput(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') confirmWeight(); }}
+                    placeholder={`مثال: 0.5 ${cfg.label}`}
+                    className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 py-3 px-4 rounded-xl text-center font-black text-lg focus:ring-2 focus:ring-indigo-400 focus:outline-none dark:text-white"
+                  />
+                </div>
+
+                {cfg.subUnit && (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-700" />
+                      <span className="text-[11px] font-bold text-slate-400">أو أدخل بالـ {cfg.subUnit}</span>
+                      <div className="flex-1 h-px bg-slate-100 dark:bg-slate-700" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">الكمية بالـ {cfg.subUnit}</label>
+                      <input
+                        type="number" dir="ltr" min="0" step="1"
+                        value={weightSubInput}
+                        onChange={(e) => { setWeightSubInput(e.target.value); setWeightUnitInput(''); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') confirmWeight(); }}
+                        placeholder={`مثال: 250 ${cfg.subUnit}`}
+                        className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 py-3 px-4 rounded-xl text-center font-black text-lg focus:ring-2 focus:ring-indigo-400 focus:outline-none dark:text-white"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl px-4 py-3">
+                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400">الإجمالي ({formatQty(qty, weightProduct.unit)})</span>
+                  <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">{lineTotal.toFixed(2)} {storeSettings.currency}</span>
+                </div>
+                {overStock && <p className="text-xs text-red-500 font-bold text-center">⚠️ الكمية أكبر من المتاح بالمخزون</p>}
+              </div>
+
+              <div className="p-5 pt-0">
+                <button
+                  onClick={confirmWeight}
+                  disabled={qty <= 0}
+                  style={{ backgroundColor: storeSettings.themeColor }}
+                  className="w-full text-white font-black py-4 rounded-xl shadow-lg hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  إضافة للفاتورة
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Mobile Bottom Navigation (Visible only on small screens) */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] z-[100] flex items-center justify-around px-2 pb-5 pt-2">

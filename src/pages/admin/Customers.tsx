@@ -73,6 +73,7 @@ export default function Customers() {
             sale_price: o.total || o.paid_amount || 0,
             stock_quantity: 99999,
             category_id: '',
+            unit: 'قطعة',
             quantity: 1,
             returned_quantity: 0,
             refunded_amount: 0,
@@ -125,6 +126,7 @@ export default function Customers() {
             sale_price: appointment.cost || 0,
             stock_quantity: 99999,
             category_id: '',
+            unit: 'قطعة',
             quantity: 1,
             returned_quantity: 0,
             refunded_amount: 0

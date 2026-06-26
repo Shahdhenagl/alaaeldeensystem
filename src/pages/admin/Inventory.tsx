@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore, type Product } from '../../store/useStore';
 import { Plus, Edit2, EyeOff, Eye, Search, X, Tag, FileText, Table as TableIcon, Box, AlertTriangle, TrendingUp, ScanLine, CheckCircle2 } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
+import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -57,7 +58,8 @@ export default function Inventory() {
     average_purchase_price: 0,
     sale_price: 0,
     stock_quantity: 0,
-    category_id: categories[0]?.id || ''
+    category_id: categories[0]?.id || '',
+    unit: 'قطعة'
   });
 
   const normalizedSearch = normalizeArabic(searchQuery);
@@ -109,9 +111,9 @@ export default function Inventory() {
   };
 
   const handleEditStock = (product: Product) => {
-    const newStock = prompt(`تعديل المخزون للمنتج (${product.name}):`, product.stock_quantity.toString());
+    const newStock = prompt(`تعديل المخزون للمنتج (${product.name}) بوحدة (${product.unit || 'قطعة'}):`, product.stock_quantity.toString());
     if (newStock !== null) {
-      const parsed = parseInt(newStock, 10);
+      const parsed = parseFloat(newStock);
       if (!isNaN(parsed) && parsed >= 0) {
         updateProduct(product.id, { stock_quantity: parsed });
       }
@@ -137,7 +139,8 @@ export default function Inventory() {
       average_purchase_price: product.average_purchase_price || product.purchase_price,
       sale_price: product.sale_price,
       stock_quantity: product.stock_quantity,
-      category_id: product.category_id
+      category_id: product.category_id,
+      unit: product.unit || 'قطعة'
     });
     setShowAddModal(true);
   };
@@ -151,7 +154,8 @@ export default function Inventory() {
       average_purchase_price: 0,
       sale_price: 0,
       stock_quantity: 0,
-      category_id: categories[0]?.id || ''
+      category_id: categories[0]?.id || '',
+      unit: 'قطعة'
     });
     setShowAddModal(true);
   };
@@ -184,7 +188,8 @@ export default function Inventory() {
       average_purchase_price: 0,
       sale_price: 0,
       stock_quantity: 0,
-      category_id: categories[0]?.id || ''
+      category_id: categories[0]?.id || '',
+      unit: 'قطعة'
     });
   };
 
@@ -193,11 +198,12 @@ export default function Inventory() {
       ['تقرير المخزون والمنتجات', '', '', '', '', ''],
       ['التاريخ', new Date().toLocaleDateString(), '', '', '', ''],
       [''],
-      ['الباركود', 'اسم المنتج', 'التصنيف', 'سعر الشراء', 'سعر البيع', 'المخزون'],
+      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', 'المخزون'],
       ...filteredProducts.map(p => [
         p.barcode,
         p.name,
         categories.find(c => c.id === p.category_id)?.name || '',
+        getUnitConfig(p.unit).label,
         p.purchase_price,
         p.average_purchase_price,
         p.sale_price,
@@ -348,10 +354,21 @@ export default function Inventory() {
                     )}
                   </div>
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">سعر البيع الافتراضي <span className="text-red-500">*</span></label>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">وحدة البيع <span className="text-red-500">*</span></label>
+                  <select value={formData.unit} onChange={e => setFormData({...formData, unit: e.target.value})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 font-bold">
+                    {UNIT_OPTIONS.map(u => (
+                      <option key={u.value} value={u.value}>{u.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">{isFractionalUnit(formData.unit) ? '⚖️ منتج يُباع بالوزن — يمكن بيع كميات كسرية' : '🔢 منتج يُباع بالعدد'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">سعر البيع لكل {getUnitConfig(formData.unit).label} <span className="text-red-500">*</span></label>
                   <input type="number" min="0" step="0.01" required value={formData.sale_price} onChange={e => setFormData({...formData, sale_price: parseFloat(e.target.value) || 0})} style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-green-500" />
-                  <p className="text-xs text-slate-400 mt-1">ℹ️ يمكن تعديل سعر البيع لاحقاً — السعر والمخزون يُحددان تلقائياً عبر فواتير المشتريات</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs text-slate-400 -mt-1">ℹ️ يمكن تعديل سعر البيع لاحقاً — متوسط الشراء والمخزون يُحددان تلقائياً عبر فواتير المشتريات</p>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
@@ -513,6 +530,7 @@ export default function Inventory() {
                 <th className="p-4">الباركود</th>
                 <th className="p-4">اسم المنتج</th>
                 <th className="p-4">التصنيف</th>
+                <th className="p-4 text-center">الوحدة</th>
                 <th className="p-4 text-center">سعر الشراء</th>
                 <th className="p-4 text-center">متوسط الشراء</th>
                 <th className="p-4 text-center border-x border-slate-100 bg-slate-50">سعر البيع</th>
@@ -535,23 +553,26 @@ export default function Inventory() {
                     </td>
                     <td className={`p-4 font-bold ${product.is_hidden ? 'line-through text-slate-400' : ''}`}>{product.name}</td>
                     <td className="p-4 text-slate-500">{category}</td>
+                    <td className="p-4 text-center">
+                      <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">{getUnitConfig(product.unit).label}</span>
+                    </td>
                     <td className="p-4 text-center">{product.purchase_price} {storeSettings.currency}</td>
                     <td className="p-4 text-center font-bold text-indigo-600 bg-indigo-50/30">{product.average_purchase_price} {storeSettings.currency}</td>
-                    
+
                     <td className="p-4 text-center border-x border-slate-100 bg-slate-50/50">
                       <button onClick={() => handleEditPrice(product)} style={{ '--hover-color': storeSettings.themeColor } as any} className="flex items-center justify-center gap-2 w-full hover:text-[var(--hover-color)] transition group font-black">
-                        {product.sale_price} {storeSettings.currency}
+                        {product.sale_price} {storeSettings.currency}<span className="text-[10px] text-slate-400 font-normal">/{getUnitConfig(product.unit).label}</span>
                         <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
                       </button>
                     </td>
 
                     <td className="p-4 text-center border-l border-slate-100 bg-slate-50/50">
-                      <button 
-                        onClick={() => handleEditStock(product)} 
+                      <button
+                        onClick={() => handleEditStock(product)}
                         style={{ '--hover-bg': storeSettings.themeColor + '15', '--hover-text': storeSettings.themeColor } as any}
                         className={`flex items-center justify-center gap-2 w-full font-bold px-3 py-1.5 rounded-lg transition group ${isLowStock ? 'bg-red-50 text-red-600' : 'hover:bg-[var(--hover-bg)] hover:text-[var(--hover-text)]'}`}
                       >
-                        {product.stock_quantity}
+                        {formatQty(product.stock_quantity, product.unit)}
                         <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
                       </button>
                     </td>

@@ -236,6 +236,7 @@ export default function CarMaintenance() {
             sale_price: o.total || o.paid_amount || 0,
             stock_quantity: 99999,
             category_id: '',
+            unit: 'قطعة',
             quantity: 1,
             returned_quantity: 0,
             refunded_amount: 0,
@@ -288,6 +289,7 @@ export default function CarMaintenance() {
             sale_price: appointment.cost || 0,
             stock_quantity: 99999,
             category_id: '',
+            unit: 'قطعة',
             quantity: 1,
             returned_quantity: 0,
             refunded_amount: 0
@@ -412,6 +414,7 @@ export default function CarMaintenance() {
             sale_price: o.total || o.paid_amount || 0,
             stock_quantity: 99999,
             category_id: '',
+            unit: 'قطعة',
             quantity: 1,
             returned_quantity: 0,
             refunded_amount: 0,
@@ -521,6 +524,7 @@ export default function CarMaintenance() {
       average_purchase_price: 0,
       sale_price: Number(revenueForm.amount),
       stock_quantity: 99999,
+      unit: 'قطعة',
       quantity: 1,
       returned_quantity: 0
     }] });
@@ -594,6 +598,7 @@ export default function CarMaintenance() {
         average_purchase_price: costAmount,
         sale_price: saleAmount,
         stock_quantity: 99999,
+        unit: 'قطعة',
         quantity: 1,
         returned_quantity: 0
       }] });
@@ -2402,6 +2407,7 @@ export default function CarMaintenance() {
                                         sale_price: o.total || o.paid_amount || 0,
                                         stock_quantity: 99999,
                                         category_id: '',
+                                        unit: 'قطعة',
                                         quantity: 1,
                                         returned_quantity: 0,
                                         refunded_amount: 0,
@@ -2417,6 +2423,7 @@ export default function CarMaintenance() {
                                       sale_price: item.sale_price,
                                       stock_quantity: 99999,
                                       category_id: item.category_id || '',
+                                      unit: item.unit || 'قطعة',
                                       quantity: item.quantity || 1,
                                       returned_quantity: item.returned_quantity || 0,
                                       refunded_amount: item.refunded_amount || 0,
