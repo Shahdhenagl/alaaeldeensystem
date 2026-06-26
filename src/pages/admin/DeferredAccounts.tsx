@@ -69,7 +69,7 @@ export default function DeferredAccounts() {
       const { supabase } = await import('../../lib/supabase');
       const { data: ordersData, error } = await supabase
         .from('orders')
-        .select('*')
+        .select('*, order_items(*)')
         .not('customer_id', 'is', null)
         .eq('is_deleted', false);
 
@@ -85,7 +85,7 @@ export default function DeferredAccounts() {
         const cid = (typeof o.customer_id === 'string' ? o.customer_id : o.customer?.id) as string;
         if (!cid) continue;
         if (!debtMap[cid]) debtMap[cid] = { total: 0, orders: [] };
-        const returnedValue = calculateOrderReturnValue(o);
+        const returnedValue = calculateOrderReturnValue({ ...o, items: o.order_items });
         const effectiveTotal = o.type === 'payment' ? 0 : (o.total as number) - returnedValue;
         const debt = effectiveTotal - (o.paid_amount as number);
         if (debt > 0.009) {
