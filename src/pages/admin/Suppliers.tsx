@@ -336,11 +336,11 @@ export default function Suppliers() {
       const product = products.find(p => p.id === item.product_id);
       return `
         <tr>
-          <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;">${index + 1}</td>
-          <td style="padding:10px 4px;border-bottom:1px solid #eee;font-weight:bold;">${escapeHtml(product?.name || 'منتج غير معروف')}</td>
-          <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;">${item.quantity}</td>
-          <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:center;">${item.purchase_price.toFixed(2)}</td>
-          <td style="padding:10px 4px;border-bottom:1px solid #eee;text-align:left;font-weight:black;">${(item.purchase_price * item.quantity).toFixed(2)}</td>
+          <td style="text-align:center;">${index + 1}</td>
+          <td style="text-align:right;font-weight:bold;">${escapeHtml(product?.name || 'منتج غير معروف')}</td>
+          <td style="text-align:center;">${item.quantity}</td>
+          <td style="text-align:center;">${item.purchase_price.toFixed(2)}</td>
+          <td style="text-align:left;font-weight:bold;">${(item.purchase_price * item.quantity).toFixed(2)}</td>
         </tr>
       `;
     }).join('');
@@ -355,52 +355,47 @@ export default function Suppliers() {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Cairo', sans-serif;}
-  body{background:#fff;color:#1e293b;padding:0;margin:0;}
-  .invoice-container{width:148mm;min-height:210mm;margin:0 auto;padding:12mm;position:relative;display:flex;flex-direction:column;}
-  
-  .header-main{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #1e293b;padding-bottom:15px;margin-bottom:20px;}
-  .store-identity{display:flex;align-items:center;gap:15px;}
-  .logo{height:64px;width:auto;max-width:260px;object-fit:contain;border-radius:12px;}
-  .store-name{font-size:24px;font-weight:900;color:#1e293b;}
-  .store-details{font-size:11px;color:#64748b;margin-top:5px;line-height:1.5;}
-  
-  .invoice-title-badge{background:#1e293b;color:#fff;padding:6px 15px;border-radius:8px;font-weight:900;font-size:14px;white-space:nowrap;}
-  
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:25px;background:#f8fafc;padding:15px;border-radius:12px;border:1px solid #e2e8f0;}
-  .info-item{font-size:13px;display:flex;gap:8px;}
-  .info-item strong{color:#64748b;white-space:nowrap;}
-  .info-item span{color:#1e293b;font-weight:700;}
-  
-  table{width:100%;border-collapse:collapse;margin-bottom:20px;}
-  thead th{background:#f1f5f9;color:#475569;font-size:13px;padding:12px 8px;text-align:center;border-bottom:2px solid #cbd5e1;}
+  body{background:#fff;color:#000;margin:0;}
+  .invoice-container{width:80mm;margin:0 auto;padding:3mm 2mm;display:flex;flex-direction:column;}
+
+  .header-main{text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;}
+  .logo{max-height:55px;max-width:62mm;width:auto;object-fit:contain;display:block;margin:0 auto 4px;}
+  .store-name{font-size:17px;font-weight:900;color:#000;}
+  .store-details{font-size:9px;color:#333;margin-top:2px;line-height:1.4;}
+  .invoice-title-badge{display:inline-block;background:#000;color:#fff;padding:3px 12px;border-radius:6px;font-weight:900;font-size:11px;margin-top:5px;}
+
+  .info-grid{display:flex;flex-direction:column;gap:2px;margin:6px 0;font-size:10px;}
+  .info-item{display:flex;justify-content:space-between;gap:6px;}
+  .info-item strong{color:#444;white-space:nowrap;}
+  .info-item span{color:#000;font-weight:700;}
+
+  table{width:100%;border-collapse:collapse;margin-bottom:5px;}
+  thead th{font-size:9px;padding:4px 1px;text-align:center;border-bottom:1px solid #000;font-weight:900;}
   thead th:nth-child(2){text-align:right;}
   thead th:last-child{text-align:left;}
-  
-  .summary-section{margin-right:auto;width:65%;margin-top:auto;}
-  .summary-row{display:flex;justify-content:space-between;padding:8px 0;font-size:14px;border-bottom:1px solid #f1f5f9;}
-  .summary-row.total{border-top:2px solid #1e293b;border-bottom:none;margin-top:5px;font-size:18px;font-weight:900;}
-  
-  .footer-container{display:flex;justify-content:space-between;align-items:flex-end;margin-top:30px;padding-top:15px;border-top:1px dashed #cbd5e1;}
-  .footer-text{font-size:12px;color:#94a3b8;flex:1;text-align:center;}
-  .qr-code{width:80px;height:80px;border:1px solid #f1f5f9;padding:5px;border-radius:8px;}
+  tbody td{font-size:9px;padding:3px 1px;border-bottom:1px dotted #bbb;}
+
+  .summary-section{width:100%;margin-top:4px;}
+  .summary-row{display:flex;justify-content:space-between;padding:2px 0;font-size:10px;}
+  .summary-row.total{border-top:1px solid #000;border-bottom:1px solid #000;margin-top:3px;padding:4px 0;font-size:14px;font-weight:900;}
+
+  .footer-container{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:8px;padding-top:6px;border-top:1px dashed #000;}
+  .footer-text{font-size:9px;color:#333;text-align:center;}
+  .qr-code{width:80px;height:80px;}
 
   @media print{
-    @page{size:A5;margin:0;}
-    body{-webkit-print-color-adjust:exact;}
-    .invoice-container{width:148mm;height:210mm;padding:10mm;}
+    @page{size:80mm auto;margin:0;}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .invoice-container{width:80mm;padding:3mm 2mm;}
   }
 </style>
 </head>
 <body>
 <div class="invoice-container">
   <div class="header-main">
-    <div class="store-identity">
-      <img class="logo" src="${escapeHtml(storeSettings.logo)}" onerror="this.style.display='none'" />
-      <div>
-        <div class="store-name">${escapeHtml(storeSettings.name)}</div>
-        <div class="store-details">${escapeHtml(storeSettings.address)} | ${escapeHtml(storeSettings.phone)}</div>
-      </div>
-    </div>
+    <img class="logo" src="${escapeHtml(storeSettings.logo)}" onerror="this.style.display='none'" />
+    <div class="store-name">${escapeHtml(storeSettings.name)}</div>
+    <div class="store-details">${escapeHtml(storeSettings.address)} | ${escapeHtml(storeSettings.phone)}</div>
     <div class="invoice-title-badge">${isPaymentReceipt ? 'إيصال سداد مورد' : 'فاتورة مشتريات'}</div>
   </div>
 
