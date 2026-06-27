@@ -448,6 +448,19 @@ export default function Budget() {
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in" id="budget-report">
+      <details className="export-hide bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-800">
+        <summary className="cursor-pointer font-black text-indigo-800 dark:text-indigo-300 select-none">
+          📘 دليل سريع: يعني إيه الأرقام دي؟
+        </summary>
+        <ul className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300 list-disc pr-5 leading-relaxed">
+          <li><b>إجمالي الإيرادات:</b> كل الفلوس اللي دخلت فعلاً (مبيعات مدفوعة + تحصيل من العملاء على الأجل + أي إيراد إضافي).</li>
+          <li><b>إجمالي المصروفات:</b> كل الفلوس اللي خرجت (مشتريات للموردين + مصروفات + رواتب + مرتجعات اترد فيها كاش).</li>
+          <li><b>صافي الربح / صافي الخزنة:</b> الإيرادات ناقص المصروفات. لو موجب يبقى ربح، لو سالب يبقى خسارة.</li>
+          <li><b>إيرادات أخرى ومسدّد آجل:</b> المبالغ اللي العملاء سدّدوها من مديونيتهم القديمة + أي إيراد يدوي.</li>
+          <li><b>مبيعات آجلة (أجل):</b> بضاعة اتباعت ولسه مدفوعتش — مش بتتحسب إيراد دلوقتي، بتتحسب لما العميل يسدّد.</li>
+          <li><b>مرتجعات عملاء:</b> بس المرتجع اللي اترد فيه <b>كاش</b> بيظهر كمصروف. المرتجع اللي اتخصم من المديونية مش بيظهر هنا لأنه مخرّجش كاش — هو بس قلّل دين العميل.</li>
+        </ul>
+      </details>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3">
