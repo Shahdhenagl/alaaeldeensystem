@@ -6,20 +6,23 @@ import { unitMinQty, unitStep } from '../utils/units';
 // endpoint (which holds the service-role key), so a cashier added from the
 // admin panel can log in immediately. Best-effort: in local dev (no /api) or on
 // failure it silently no-ops, and you can still run the provisioning script.
-async function provisionCashierAuth(id: string, password: string): Promise<boolean> {
+async function provisionCashierAuth(id: string, password: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const { data: sess } = await supabase.auth.getSession();
     const token = sess?.session?.access_token;
-    if (!token) return false;
+    if (!token) return { ok: false, error: 'لا توجد جلسة دخول حالية' };
     const res = await fetch('/api/provision-cashier', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ id, password }),
     });
-    return res.ok;
+    if (res.ok) return { ok: true };
+    let msg = 'HTTP ' + res.status;
+    try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
+    return { ok: false, error: msg };
   } catch (e) {
     console.warn('provisionCashierAuth failed:', e);
-    return false;
+    return { ok: false, error: String((e as Error)?.message || e) };
   }
 }
 
@@ -2102,8 +2105,9 @@ export const useStore = create<CashierStore>((set, get) => ({
     const row = data as unknown as Cashier;
     // Auto-create the cashier's login (Supabase Auth) so they can sign in right away.
     if (row.password) {
-      const ok = await provisionCashierAuth(row.id, row.password);
-      if (ok) row.email = `cashier-${row.id}@cashier.local`;
+      const r = await provisionCashierAuth(row.id, row.password);
+      if (r.ok) row.email = `cashier-${row.id}@cashier.local`;
+      else alert('تم حفظ بيانات الكاشير، لكن تعذّر إنشاء حساب الدخول تلقائياً:\n' + (r.error || '') + '\n\nتأكد أن SUPABASE_SERVICE_ROLE_KEY مضبوط في Vercel، ثم عدّل الكاشير وأعد حفظ الباسورد.');
     }
     set((state) => ({ cashiers: [row, ...state.cashiers] }));
   },
@@ -2112,8 +2116,9 @@ export const useStore = create<CashierStore>((set, get) => ({
     await supabase.from('cashiers').update(updated).eq('id', id);
     // If the password changed, sync it to the cashier's login account.
     if (updated.password) {
-      const ok = await provisionCashierAuth(id, updated.password);
-      if (ok) updated = { ...updated, email: `cashier-${id}@cashier.local` };
+      const r = await provisionCashierAuth(id, updated.password);
+      if (r.ok) updated = { ...updated, email: `cashier-${id}@cashier.local` };
+      else alert('تم حفظ التعديل، لكن تعذّر تحديث حساب الدخول:\n' + (r.error || '') + '\n\nتأكد أن SUPABASE_SERVICE_ROLE_KEY مضبوط في Vercel.');
     }
     set((state) => ({ cashiers: state.cashiers.map((c) => (c.id === id ? { ...c, ...updated } : c)) }));
   },
