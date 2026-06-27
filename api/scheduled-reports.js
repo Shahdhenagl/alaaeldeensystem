@@ -3,6 +3,7 @@ import {
   cairoDayRange,
   currentMonthRange,
   fetchReportData,
+  fetchOpeningBalance,
   fetchStoreSettings,
   getSupabase,
   isLastCairoDayOfMonth,
@@ -96,8 +97,11 @@ export default async function handler(req, res) {
     const sent = [];
 
     const dayRange = cairoDayRange(today);
-    const dayData = await fetchReportData(supabase, dayRange.start, dayRange.end);
-    await sendTelegramText(buildDailyMessage(settings, dayRange, dayData));
+    const [dayData, openingBalance] = await Promise.all([
+      fetchReportData(supabase, dayRange.start, dayRange.end),
+      fetchOpeningBalance(supabase, dayRange.start),
+    ]);
+    await sendTelegramText(buildDailyMessage(settings, dayRange, dayData, openingBalance));
     sent.push('daily');
 
     sent.push(...await sendFinancingReminders(supabase, settings, today));

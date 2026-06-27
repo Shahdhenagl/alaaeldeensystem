@@ -230,7 +230,20 @@ export default function POS() {
         if (d >= start && d < end) addM(dayOut, r, field);
         else if (d < start) addM(befOut, r, field);
       });
-      addOut(expRes.data as any[], 'amount');
+      // المصروفات: لو المبلغ سالب فهو إيراد مسجّل يدوياً (داخل) مش خارج.
+      const expensesArr = (expRes.data as any[]) || [];
+      const realExpenses = expensesArr.filter((e) => (Number(e.amount) || 0) >= 0);
+      const manualIncomes = expensesArr.filter((e) => (Number(e.amount) || 0) < 0).map((e) => ({
+        ...e, amount: Math.abs(+e.amount || 0),
+        paid_cash: Math.abs(+e.paid_cash || 0), paid_visa: Math.abs(+e.paid_visa || 0),
+        paid_wallet: Math.abs(+e.paid_wallet || 0), paid_instapay: Math.abs(+e.paid_instapay || 0),
+      }));
+      manualIncomes.forEach((r: any) => {
+        const d = new Date(r.created_at);
+        if (d >= start && d < end) addM(dayIn, r, 'amount');
+        else if (d < start) addM(befIn, r, 'amount');
+      });
+      addOut(realExpenses, 'amount');
       addOut(purRes.data as any[], 'paid_amount');
       addOut(salRes.data as any[], 'amount');
       const sum = (o: Record<string, number>) => o.cash + o.visa + o.wallet + o.instapay;

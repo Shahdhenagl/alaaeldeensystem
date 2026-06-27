@@ -51,7 +51,15 @@ export default function Managers() {
         const refunded = (o.items || []).reduce((s: number, it: any) => s + (+it.refunded_amount || 0), 0);
         if (refunded > 0) add(-1, { paid_amount: refunded, payment_method: o.refund_method || o.payment_method }, 'paid_amount');
       });
-      expenses.forEach((e) => add(-1, e, 'amount'));
+      expenses.forEach((e) => {
+        const amt = Number(e.amount) || 0;
+        if (amt < 0) {
+          // مصروف بمبلغ سالب = إيراد مسجّل يدوياً (داخل للخزنة) مش خارج منها
+          add(1, { ...e, amount: Math.abs(amt), paid_cash: Math.abs(+e.paid_cash || 0), paid_visa: Math.abs(+e.paid_visa || 0), paid_wallet: Math.abs(+e.paid_wallet || 0), paid_instapay: Math.abs(+e.paid_instapay || 0) }, 'amount');
+        } else {
+          add(-1, e, 'amount');
+        }
+      });
       purRes.data?.forEach((p: any) => add(-1, p, 'paid_amount'));
       salRes.data?.forEach((s: any) => add(-1, s, 'amount'));
       net.cash += Number((storeSettings as any).initialBalance ?? (storeSettings as any).initial_balance) || 0;
