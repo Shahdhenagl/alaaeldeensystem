@@ -237,6 +237,8 @@ create table if not exists employees (
   annual_leave_balance numeric not null default 0,
   hire_date date default current_date,
   is_active boolean not null default true,
+  cashier_id uuid,
+  commission_rate numeric default 0,
   created_at timestamptz default now()
 );
 create index if not exists idx_employees_is_active on employees(is_active);

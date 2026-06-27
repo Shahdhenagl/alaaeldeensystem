@@ -272,6 +272,8 @@ export interface Employee {
   hire_date: string;
   is_active: boolean;
   created_at: string;
+  cashier_id?: string; // ربط الموظف بحساب الكاشير
+  commission_rate?: number; // نسبة عمولة المبيعات % (للمحاسبين)
 }
 
 export interface EmployeeTransaction {
@@ -2135,6 +2137,16 @@ export const useStore = create<CashierStore>((set, get) => ({
       else alert('تم حفظ بيانات الكاشير، لكن تعذّر إنشاء حساب الدخول تلقائياً:\n' + (r.error || '') + '\n\nتأكد أن SUPABASE_SERVICE_ROLE_KEY مضبوط في Vercel، ثم عدّل الكاشير وأعد حفظ الباسورد.');
     }
     set((state) => ({ cashiers: [row, ...state.cashiers] }));
+
+    // Auto-create a linked employee profile (so the cashier gets salary + sales commission).
+    try {
+      const { data: emp } = await supabase.from('employees')
+        .insert({ name: row.name, job_title: 'كاشير', phone: row.phone || '', cashier_id: row.id, monthly_salary: 0, commission_rate: 0 })
+        .select().single();
+      if (emp) set((state) => ({ employees: [emp as unknown as Employee, ...state.employees] }));
+    } catch (e) {
+      console.warn('Could not auto-create employee for cashier:', e);
+    }
   },
 
   updateCashier: async (id, updated) => {

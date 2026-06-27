@@ -7,12 +7,22 @@ import {
 } from 'lucide-react';
 
 export default function Employees() {
-  const { 
-    employees, employeeTransactions, employeeLeaves, storeSettings, 
+  const {
+    employees, employeeTransactions, employeeLeaves, storeSettings, orders, cashiers,
     addEmployee, updateEmployee, addEmployeeTransaction,
     updateEmployeeTransaction, deleteEmployeeTransaction,
     addEmployeeLeave, updateEmployeeLeave, deleteEmployeeLeave
   } = useStore();
+
+  // إجمالي مبيعات محاسب (المرتبط بموظف) في شهر معيّن (YYYY-MM).
+  const cashierMonthlySales = (emp: any, month: string) => {
+    if (!emp?.cashier_id) return 0;
+    const cashier = cashiers.find((c: any) => c.id === emp.cashier_id);
+    const cname = cashier?.name || emp.name;
+    return orders
+      .filter((o: any) => !o.is_deleted && o.type === 'sale' && o.cashier_name === cname && String(o.date || '').slice(0, 7) === month)
+      .reduce((s: number, o: any) => s + (Number(o.total) || 0), 0);
+  };
 
   const [activeTab, setActiveTab] = useState<'employees' | 'transactions'>('employees');
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,6 +60,7 @@ export default function Employees() {
     month: new Date().toISOString().slice(0, 7),
     dedDays: '',
     dedAmount: '',
+    commissionRate: '',
     note: ''
   });
 
@@ -301,6 +312,7 @@ export default function Employees() {
         month: transaction.month,
         dedDays: '',
         dedAmount: (transaction.deductions || 0).toString(),
+        commissionRate: '',
         note: transaction.note || ''
       });
       setShowTransModal(true);
@@ -320,6 +332,7 @@ export default function Employees() {
       month: currentMonth,
       dedDays: '',
       dedAmount: '',
+      commissionRate: (type === 'salary' && emp.commission_rate) ? String(emp.commission_rate) : '',
       note: type === 'salary' ? `راتب شهر ${currentMonth}` : type === 'incentive' ? `حافز شهر ${currentMonth}` : ''
     });
     setShowTransModal(true);
@@ -1215,6 +1228,36 @@ export default function Employees() {
                   />
                 </div>
               </div>
+
+              {transType === 'salary' && selectedEmployee?.cashier_id && (() => {
+                const sales = cashierMonthlySales(selectedEmployee, transFormData.month);
+                const rate = parseFloat(transFormData.commissionRate) || 0;
+                const commission = sales * rate / 100;
+                return (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between text-sm font-black text-emerald-800">
+                      <span>عمولة المبيعات</span>
+                      <span>مبيعات الشهر: {sales.toFixed(2)} {storeSettings.currency}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-xs font-bold text-slate-600">نسبة العمولة %</label>
+                      <input type="number" min="0" step="0.1" className="w-20 bg-white border border-emerald-200 rounded-lg p-2 text-center font-bold" value={transFormData.commissionRate} onChange={e => setTransFormData({ ...transFormData, commissionRate: e.target.value })} />
+                      <span className="text-sm font-black text-emerald-700">= {commission.toFixed(2)} {storeSettings.currency}</span>
+                      <button type="button" disabled={commission <= 0}
+                        onClick={() => setTransFormData({
+                          ...transFormData,
+                          paid_cash: ((parseFloat(transFormData.paid_cash) || 0) + commission).toFixed(2),
+                          amount: ((parseFloat(transFormData.amount) || 0) + commission).toFixed(2),
+                          note: `${transFormData.note}${transFormData.note ? ' + ' : ''}عمولة مبيعات شهر ${transFormData.month} (${rate}%): ${commission.toFixed(2)}`,
+                        })}
+                        className="mr-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">
+                        + أضف العمولة للراتب
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500">تُحسب على مبيعات هذا الشهر فقط؛ بعد صرف الشهر تبدأ مبيعات الشهر التالي من الصفر تلقائياً.</p>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-4">
                 <p className="text-sm font-bold text-slate-700 border-b border-slate-100 pb-2">تفاصيل الدفع (طرق الدفع)</p>
