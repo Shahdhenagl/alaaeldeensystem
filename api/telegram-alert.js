@@ -196,18 +196,24 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, skipped: true, reason: 'No alertable data' });
     }
 
-    const telegramRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        disable_web_page_preview: false,
-      }),
-    });
-
-    const result = await telegramRes.json();
-    return res.status(telegramRes.ok ? 200 : 502).json(result);
+    // TELEGRAM_CHAT_ID may be a comma-separated list to notify several people.
+    const chatIds = String(chatId).split(',').map((s) => s.trim()).filter(Boolean);
+    let ok = true;
+    const results = [];
+    for (const cid of chatIds) {
+      const telegramRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: cid,
+          text,
+          disable_web_page_preview: false,
+        }),
+      });
+      if (!telegramRes.ok) ok = false;
+      results.push(await telegramRes.json());
+    }
+    return res.status(ok ? 200 : 502).json({ ok, results });
   } catch (error) {
     return res.status(500).json({ ok: false, error: String(error) });
   }

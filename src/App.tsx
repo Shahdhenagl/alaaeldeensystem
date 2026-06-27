@@ -21,7 +21,7 @@ import Budget from './pages/admin/Budget';
 import Financing from './pages/admin/Financing';
 import StockAlerts from './pages/admin/StockAlerts';
 import Coupons from './pages/admin/Coupons';
-import CarMaintenance from './pages/admin/CarMaintenance';
+import Manufacturing from './pages/admin/Manufacturing';
 import PublicInvoice from './pages/PublicInvoice';
 import { useStore } from './store/useStore';
 
@@ -183,7 +183,7 @@ function App() {
             <Route path="stock-alerts" element={<StockAlerts />} />
             <Route path="budget" element={<Budget />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="car-maintenance" element={<CarMaintenance />} />
+            <Route path="manufacturing" element={<Manufacturing />} />
           </Route>
           <Route path="/view-invoice/:id" element={<PublicInvoice />} />
         </Routes>

@@ -35,6 +35,33 @@ export interface Product {
   category_id: string;
   unit: string; // وحدة المنتج: قطعة / كيلو / جرام / لتر ... (المخزون والسعر بهذه الوحدة)
   is_hidden?: boolean; // إخفاء المنتج من الكاشير دون حذفه
+  color?: string; // لون المنتج (للملابس)
+}
+
+// ── التصنيع ──────────────────────────────────────────────────
+export interface Material {
+  id: string;
+  name: string;
+  unit: string;
+  cost_per_unit: number;
+  stock_quantity: number;
+  created_at?: string;
+}
+
+export interface ProductionOrder {
+  id: string;
+  product_id?: string;
+  product_name: string;
+  color?: string;
+  code?: string;
+  quantity: number;
+  materials_cost: number;
+  extra_costs: number;
+  total_cost: number;
+  cost_per_piece: number;
+  sale_price: number;
+  notes?: string;
+  created_at?: string;
 }
 
 export interface Category {
@@ -299,6 +326,8 @@ interface CashierStore {
   customers: Customer[];
   suppliers: Supplier[];
   cashiers: Cashier[];
+  materials: Material[];
+  productionOrders: ProductionOrder[];
   cart: OrderItem[];
   orders: Order[];
   expenses: Expense[];
@@ -395,6 +424,22 @@ interface CashierStore {
   addCashier: (cashier: Omit<Cashier, 'id' | 'created_at'>) => Promise<void>;
   updateCashier: (id: string, cashier: Partial<Cashier>) => Promise<void>;
   deleteCashier: (id: string) => Promise<void>;
+
+  // Manufacturing
+  loadManufacturing: () => Promise<void>;
+  addMaterial: (m: Omit<Material, 'id' | 'created_at'>) => Promise<void>;
+  updateMaterial: (id: string, m: Partial<Material>) => Promise<void>;
+  deleteMaterial: (id: string) => Promise<void>;
+  addProductionOrder: (input: {
+    product_name: string;
+    color?: string;
+    code?: string;
+    quantity: number;
+    sale_price: number;
+    extra_costs: number;
+    notes?: string;
+    materials: { material_id: string; quantity: number }[];
+  }) => Promise<boolean>;
   deleteCashierNote: (id: string) => Promise<void>;
 
   // Coupons
@@ -613,6 +658,8 @@ export const useStore = create<CashierStore>((set, get) => ({
   customers: [],
   suppliers: [],
   cashiers: [],
+  materials: [],
+  productionOrders: [],
   cart: [],
   orders: [],
   expenses: [],
@@ -2071,6 +2118,127 @@ export const useStore = create<CashierStore>((set, get) => ({
   deleteCashier: async (id) => {
     await supabase.from('cashiers').delete().eq('id', id);
     set((state) => ({ cashiers: state.cashiers.filter((c) => c.id !== id) }));
+  },
+
+  // ── Manufacturing ────────────────────────────────────────────
+  loadManufacturing: async () => {
+    const [mRes, pRes] = await Promise.all([
+      supabase.from('materials').select('*').order('created_at', { ascending: false }),
+      supabase.from('production_orders').select('*').order('created_at', { ascending: false }),
+    ]);
+    set({
+      materials: (mRes.data ?? []) as unknown as Material[],
+      productionOrders: (pRes.data ?? []) as unknown as ProductionOrder[],
+    });
+  },
+
+  addMaterial: async (m) => {
+    const { data } = await supabase.from('materials').insert(m).select().single();
+    if (data) set((s) => ({ materials: [data as unknown as Material, ...s.materials] }));
+  },
+
+  updateMaterial: async (id, m) => {
+    await supabase.from('materials').update(m).eq('id', id);
+    set((s) => ({ materials: s.materials.map((x) => (x.id === id ? { ...x, ...m } : x)) }));
+  },
+
+  deleteMaterial: async (id) => {
+    await supabase.from('materials').delete().eq('id', id);
+    set((s) => ({ materials: s.materials.filter((x) => x.id !== id) }));
+  },
+
+  addProductionOrder: async (input) => {
+    const state = get();
+    const usedMaterials = input.materials
+      .map((m) => ({ ...m, mat: state.materials.find((x) => x.id === m.material_id) }))
+      .filter((m) => m.mat && m.quantity > 0);
+
+    const materials_cost = usedMaterials.reduce((s, m) => s + (m.mat!.cost_per_unit * m.quantity), 0);
+    const extra_costs = Number(input.extra_costs) || 0;
+    const quantity = Number(input.quantity) || 0;
+    const total_cost = materials_cost + extra_costs;
+    const cost_per_piece = quantity > 0 ? total_cost / quantity : 0;
+
+    if (quantity <= 0) { alert('من فضلك أدخل عدد القطع المنتجة'); return false; }
+
+    try {
+      // 1) خصم الخامات من المخزون
+      for (const m of usedMaterials) {
+        const newStock = (m.mat!.stock_quantity || 0) - m.quantity;
+        const { error } = await supabase.from('materials').update({ stock_quantity: newStock }).eq('id', m.material_id);
+        if (error) throw error;
+      }
+
+      // 2) إضافة المنتج المُصنّع للمخزون (تجميع بالكود مع متوسط التكلفة)
+      let productId: string | undefined;
+      const code = (input.code || '').trim();
+      const existing = code ? state.products.find((p) => p.barcode === code) : undefined;
+      if (existing) {
+        const oldStock = Number(existing.stock_quantity) || 0;
+        const oldAvg = Number(existing.average_purchase_price ?? existing.purchase_price) || 0;
+        const newStock = oldStock + quantity;
+        const newAvg = newStock > 0 ? ((oldAvg * oldStock) + total_cost) / newStock : cost_per_piece;
+        const { error } = await supabase.from('products').update({
+          stock_quantity: newStock,
+          average_purchase_price: newAvg,
+          purchase_price: newAvg,
+          sale_price: input.sale_price,
+          color: input.color || existing.color || null,
+        }).eq('id', existing.id);
+        if (error) throw error;
+        productId = existing.id;
+      } else {
+        const { data, error } = await supabase.from('products').insert({
+          name: input.product_name,
+          barcode: code || null,
+          color: input.color || null,
+          unit: 'قطعة',
+          stock_quantity: quantity,
+          sale_price: input.sale_price,
+          purchase_price: cost_per_piece,
+          average_purchase_price: cost_per_piece,
+        }).select().single();
+        if (error) throw error;
+        productId = (data as Record<string, unknown>)?.id as string;
+      }
+
+      // 3) تسجيل أمر التصنيع
+      const { data: poData, error: poErr } = await supabase.from('production_orders').insert({
+        product_id: productId ?? null,
+        product_name: input.product_name,
+        color: input.color || null,
+        code: code || null,
+        quantity,
+        materials_cost,
+        extra_costs,
+        total_cost,
+        cost_per_piece,
+        sale_price: input.sale_price,
+        notes: input.notes || null,
+      }).select().single();
+      if (poErr) throw poErr;
+      const poId = (poData as Record<string, unknown>)?.id as string;
+
+      // 4) تسجيل الخامات المستهلكة
+      if (poId && usedMaterials.length) {
+        await supabase.from('production_materials').insert(usedMaterials.map((m) => ({
+          production_id: poId,
+          material_id: m.material_id,
+          material_name: m.mat!.name,
+          quantity: m.quantity,
+          cost: m.mat!.cost_per_unit * m.quantity,
+        })));
+      }
+
+      await get().loadManufacturing();
+      await get().loadProductsOnly();
+      new BroadcastChannel('cashier-sync').postMessage('sync_products');
+      return true;
+    } catch (e) {
+      console.error('addProductionOrder failed:', e);
+      alert('فشل حفظ أمر التصنيع: ' + String((e as Record<string, unknown>)?.message || e));
+      return false;
+    }
   },
 
   deleteCashierNote: async (id) => {
