@@ -1752,7 +1752,7 @@ export default function POS() {
               <div key={item.id} className="bg-white dark:bg-slate-800 p-3 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 flex flex-col gap-2 relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="flex justify-between items-start">
                   <h4 className="font-bold text-gray-800 dark:text-gray-100 leading-tight w-4/5 text-sm">{item.name}</h4>
-                  <button onClick={() => removeFromCart(item.id)} className="text-red-400 hover:text-red-600 dark:text-red-500 transition-colors bg-red-50 dark:bg-red-900/20 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 absolute left-3 top-3 border border-transparent hover:border-red-100 dark:hover:border-red-900/50">
+                  <button onClick={() => removeFromCart(item.id)} aria-label="حذف الصنف" className="text-red-500 hover:text-white hover:bg-red-500 dark:text-red-400 transition-colors bg-red-50 dark:bg-red-900/30 p-2 rounded-lg absolute left-3 top-3 border border-red-100 dark:border-red-900/50 shadow-sm">
                     <Trash2 size={16} />
                   </button>
                 </div>

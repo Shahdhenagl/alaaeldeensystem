@@ -198,6 +198,7 @@ export default function Inventory() {
           discountPrice: payload.discount_price,
           currency: storeSettings.currency,
           count: payload.stock_quantity,
+          storeName: storeSettings.name,
         });
       }
     }
@@ -643,7 +644,7 @@ export default function Inventory() {
                             printBarcodeLabels({
                               name: product.name, code,
                               price: product.sale_price, discountPrice: product.discount_price,
-                              currency: storeSettings.currency, count: parseInt(n) || 1,
+                              currency: storeSettings.currency, count: parseInt(n) || 1, storeName: storeSettings.name,
                             });
                           }}
                           className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-lg transition"

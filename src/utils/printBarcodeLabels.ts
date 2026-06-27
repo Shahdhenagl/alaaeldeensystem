@@ -11,7 +11,7 @@ export function generateBarcode(existing: Set<string> = new Set()): string {
   return code;
 }
 
-// Prints `count` barcode labels on the thermal label printer.
+// Prints `count` barcode labels on a 38mm x 25mm thermal label roll.
 export function printBarcodeLabels(opts: {
   name: string;
   code: string;
@@ -19,14 +19,15 @@ export function printBarcodeLabels(opts: {
   discountPrice?: number;
   currency: string;
   count: number;
+  storeName?: string;
 }) {
-  const { name, code, price, discountPrice, currency, count } = opts;
+  const { name, code, price, discountPrice, currency, count, storeName } = opts;
   if (!code) { alert('لا يوجد باركود لطباعته'); return; }
 
   // Render the barcode to a PNG once, then reuse it on every label.
   const canvas = document.createElement('canvas');
   try {
-    JsBarcode(canvas, code, { format: 'CODE128', displayValue: false, width: 2, height: 50, margin: 0 });
+    JsBarcode(canvas, code, { format: 'CODE128', displayValue: false, width: 2, height: 40, margin: 0 });
   } catch {
     alert('تعذّر توليد صورة الباركود');
     return;
@@ -41,6 +42,7 @@ export function printBarcodeLabels(opts: {
   const n = Math.max(1, Math.floor(count) || 1);
   const oneLabel = `
     <div class="label">
+      ${storeName ? `<div class="store">${escapeHtml(storeName)}</div>` : ''}
       <div class="name">${escapeHtml(name)}</div>
       <img class="bc" src="${img}" />
       <div class="code">${escapeHtml(code)}</div>
@@ -48,21 +50,23 @@ export function printBarcodeLabels(opts: {
     </div>`;
   const labels = Array.from({ length: n }).map(() => oneLabel).join('');
 
+  // Label roll: 38mm wide x 25mm tall.
   const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>طباعة باركود</title>
   <style>
-    @page { size: 40mm 30mm; margin: 0; }
+    @page { size: 38mm 25mm; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Tahoma, Arial, sans-serif; }
-    .label { width: 40mm; height: 30mm; padding: 1mm; text-align: center; page-break-after: always;
-             display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
-    .name { font-size: 9px; font-weight: bold; white-space: nowrap; overflow: hidden; max-width: 100%; }
-    .bc { width: 36mm; height: 11mm; object-fit: contain; }
-    .code { font-size: 8px; letter-spacing: 1px; }
-    .price .old { text-decoration: line-through; color: #777; font-size: 9px; margin-left: 3px; }
-    .price .new { font-size: 11px; font-weight: bold; }
+    .label { width: 38mm; height: 25mm; padding: 0.5mm 1mm; text-align: center; page-break-after: always;
+             display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; line-height: 1.1; }
+    .store { font-size: 8px; font-weight: 900; white-space: nowrap; overflow: hidden; max-width: 100%; }
+    .name { font-size: 7px; font-weight: bold; white-space: nowrap; overflow: hidden; max-width: 100%; }
+    .bc { width: 35mm; height: 8mm; object-fit: contain; }
+    .code { font-size: 7px; letter-spacing: 0.5px; }
+    .price .old { text-decoration: line-through; color: #777; font-size: 7px; margin-left: 3px; }
+    .price .new { font-size: 9px; font-weight: 900; }
   </style></head><body>${labels}
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},400);};<\/script>
   </body></html>`;
 
-  openPrintWindow(html, 'width=420,height=640');
+  openPrintWindow(html);
 }
