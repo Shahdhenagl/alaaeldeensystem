@@ -16,6 +16,7 @@ export default function Invoices() {
   const { orders, storeSettings, deleteOrder } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [showReturnsOnly, setShowReturnsOnly] = useState(false);
+  const [showDeferredOnly, setShowDeferredOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'active' | 'deleted'>('active');
   const [selectedDay, setSelectedDay] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
@@ -379,7 +380,8 @@ export default function Invoices() {
       const matchesMonth = selectedMonth === 'all' || (orderDate.getMonth() + 1).toString() === selectedMonth;
       const matchesYear = selectedYear === 'all' || orderDate.getFullYear().toString() === selectedYear;
       const matchesReturns = showReturnsOnly ? o.items.some(i => i.returned_quantity > 0) : true;
-      
+      const matchesDeferred = showDeferredOnly ? (o.type !== 'payment' && (o.total - (o.paid_amount || 0)) > 0.009) : true;
+
       const searchStr = searchQuery.toLowerCase();
       const matchesSearch = 
         o.id.toLowerCase().includes(searchStr) || 
@@ -388,9 +390,9 @@ export default function Invoices() {
 
       const matchesCashier = selectedCashier === 'all' || o.cashier_name === selectedCashier;
 
-      return matchesDay && matchesMonth && matchesYear && matchesReturns && matchesSearch && matchesCashier;
+      return matchesDay && matchesMonth && matchesYear && matchesReturns && matchesDeferred && matchesSearch && matchesCashier;
     });
-  }, [visibleOrders, searchQuery, showReturnsOnly, selectedDay, selectedMonth, selectedYear, selectedCashier]);
+  }, [visibleOrders, searchQuery, showReturnsOnly, showDeferredOnly, selectedDay, selectedMonth, selectedYear, selectedCashier]);
 
   const totalInvoiceProfit = useMemo(() => {
     return filteredOrders.reduce((sum, order) => sum + calculateInvoiceProfit(order), 0);
@@ -398,6 +400,10 @@ export default function Invoices() {
 
   const returnedInvoicesCount = useMemo(() => {
     return filteredOrders.filter(order => order.items.some(item => item.returned_quantity > 0)).length;
+  }, [filteredOrders]);
+
+  const deferredInvoicesCount = useMemo(() => {
+    return filteredOrders.filter(o => o.type !== 'payment' && (o.total - (o.paid_amount || 0)) > 0.009).length;
   }, [filteredOrders]);
 
   return (
@@ -518,7 +524,7 @@ export default function Invoices() {
                 <Archive size={16} /> سلة المهملات ({deletedOrders.length})
               </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div
                 style={{ backgroundColor: storeSettings.themeColor + '10', borderColor: storeSettings.themeColor + '25' }}
                 className="rounded-2xl border p-4"
@@ -551,6 +557,22 @@ export default function Invoices() {
                   <ArrowRightLeft size={18} />
                 </div>
                 <p className="text-2xl font-black mt-2">{returnedInvoicesCount}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeferredOnly((current) => !current)}
+                className={`rounded-2xl border p-4 text-right transition-all ${
+                  showDeferredOnly
+                    ? 'border-rose-300 bg-rose-100 text-rose-800 shadow-sm ring-2 ring-rose-200'
+                    : 'border-rose-100 bg-rose-50 text-rose-700 hover:border-rose-200 hover:bg-rose-100/60'
+                }`}
+                title={showDeferredOnly ? 'عرض كل الفواتير' : 'إظهار الفواتير الآجلة (غير المسددة بالكامل) فقط'}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] font-black text-rose-600">فواتير آجلة</p>
+                  <CreditCard size={18} />
+                </div>
+                <p className="text-2xl font-black mt-2">{deferredInvoicesCount}</p>
               </button>
             </div>
         </div>
