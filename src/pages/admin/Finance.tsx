@@ -6,7 +6,7 @@ import {
   ArrowRightLeft, Landmark, FileText, Printer
 } from 'lucide-react';
 import { calculateInvoiceProfit } from '../../utils/invoiceProfit';
-import { calculateOrderReturnValue } from '../../utils/returns';
+import { calculateOrderReturnValue, calculateCashRefunded } from '../../utils/returns';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -97,7 +97,7 @@ export default function Finance() {
     
     const returnsOut = activeOrders
       .filter(o => new Date(o.date) < startOfPeriod)
-      .reduce((sum, o) => sum + calculateOrderReturnValue(o), 0);
+      .reduce((sum, o) => sum + calculateCashRefunded(o), 0);
     
     const expensesOut = expenses
       .filter(e => new Date(e.date) < startOfPeriod)
@@ -170,7 +170,7 @@ export default function Finance() {
     
     const returnsOut = activeOrders
       .filter(o => new Date(o.date) < startOfPeriod && getPrimaryMethod(o) === method)
-      .reduce((sum, o) => sum + calculateOrderReturnValue(o), 0);
+      .reduce((sum, o) => sum + calculateCashRefunded(o), 0);
 
     const expensesOut = expenses
       .filter(e => new Date(e.date) < startOfPeriod)
@@ -253,7 +253,7 @@ export default function Finance() {
   const dailyExpensesTotal = periodTransactions.expenses.filter(e => e.amount > 0).reduce((sum, e) => sum + e.amount, 0);
   const dailyPurchasesTotal = periodTransactions.purchases.reduce((sum, inv) => sum + inv.paid_amount, 0);
   const dailyReturnsValue = periodTransactions.orders.reduce((sum, o) => {
-    return sum + calculateOrderReturnValue(o);
+    return sum + calculateCashRefunded(o);
   }, 0);
   const invoiceProfitTotal = periodTransactions.orders.reduce((sum, order) => sum + calculateInvoiceProfit(order), 0);
 
@@ -265,7 +265,7 @@ export default function Finance() {
     const inc = periodTransactions.orders.reduce((sum, o) => sum + getSafeMethodAmount(o, method, 'paid_amount'), 0);
     const returnsOut = periodTransactions.orders
       .filter(o => getPrimaryMethod(o) === method)
-      .reduce((sum, o) => sum + calculateOrderReturnValue(o), 0);
+      .reduce((sum, o) => sum + calculateCashRefunded(o), 0);
     const outExp = periodTransactions.expenses.reduce((sum, e) => sum + getSafeMethodAmount(e, method, 'amount'), 0);
     const outPur = periodTransactions.purchases.reduce((sum, inv) => sum + getSafeMethodAmount(inv, method, 'paid_amount'), 0);
     
@@ -310,8 +310,8 @@ export default function Finance() {
         originType: 'order'
       });
 
-      const returnedVal = calculateOrderReturnValue(o);
-      
+      const returnedVal = calculateCashRefunded(o);
+
       if (returnedVal > 0) {
         const primaryMethod = getPrimaryMethod(o);
         list.push({

@@ -1,6 +1,6 @@
 import { useStore } from '../../store/useStore';
 import { Banknote, ShoppingBag, ReceiptText, DollarSign } from 'lucide-react';
-import { calculateOrderReturnValue } from '../../utils/returns';
+import { calculateCashRefunded } from '../../utils/returns';
 
 export default function Overview() {
   const { orders, products, expenses, storeSettings, purchaseInvoices } = useStore();
@@ -51,7 +51,7 @@ export default function Overview() {
     return sum + initialPaid;
   }, 0);
 
-  const returnsOut = activeOrders.reduce((sum, o) => sum + calculateOrderReturnValue(o), 0);
+  const returnsOut = activeOrders.reduce((sum, o) => sum + calculateCashRefunded(o), 0);
   const expensesOut = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   const purchasesOut = purchaseInvoices.reduce((sum, inv) => sum + inv.paid_amount, 0);
   
