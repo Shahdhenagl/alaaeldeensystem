@@ -36,6 +36,7 @@ export interface Product {
   sale_price: number;
   discount_price?: number; // سعر البيع بعد الخصم (لو موجود يُستخدم في البيع)
   stock_quantity: number;
+  display_quantity?: number; // الكمية المعروضة في المحل (الباقي في المستودع)
   category_id: string;
   unit: string; // وحدة المنتج: قطعة / كيلو / جرام / لتر ... (المخزون والسعر بهذه الوحدة)
   is_hidden?: boolean; // إخفاء المنتج من الكاشير دون حذفه

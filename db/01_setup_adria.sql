@@ -41,6 +41,7 @@ create table if not exists products (
   sale_price numeric default 0,
   discount_price numeric default 0,
   stock_quantity numeric default 0,
+  display_quantity numeric default 0,
   unit text not null default 'قطعة',
   category_id uuid references categories(id) on delete set null,
   is_hidden boolean default false,

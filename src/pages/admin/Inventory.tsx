@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore, type Product } from '../../store/useStore';
 import { Plus, Edit2, EyeOff, Eye, Search, X, Tag, FileText, Table as TableIcon, Box, AlertTriangle, TrendingUp, ScanLine, CheckCircle2, Printer } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
@@ -9,8 +9,10 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 export default function Inventory() {
-  const { products, categories, storeSettings, addProduct, updateProduct } = useStore();
+  const { products, categories, storeSettings, addProduct, updateProduct, orders } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
+  const [warehouseQty, setWarehouseQty] = useState(0); // كمية المستودع عند إضافة منتج جديد
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showCatForm, setShowCatForm] = useState(false);
   const [showLowStock, setShowLowStock] = useState(false);
@@ -60,9 +62,26 @@ export default function Inventory() {
     sale_price: 0,
     discount_price: 0,
     stock_quantity: 0,
+    display_quantity: 0,
     category_id: categories[0]?.id || '',
     unit: 'قطعة'
   });
+
+  // الكمية حسب المخزن المختار: الكل = الإجمالي، المعرض = المعروض، المستودع = الباقي.
+  const dispOf = (p: any) => Math.min(Number(p.display_quantity) || 0, Number(p.stock_quantity) || 0);
+  const qtyOf = (p: any) => stockLocation === 'display' ? dispOf(p)
+    : stockLocation === 'warehouse' ? ((Number(p.stock_quantity) || 0) - dispOf(p))
+    : (Number(p.stock_quantity) || 0);
+  // كمية مباعة لكل منتج (صافي بعد المرتجع).
+  const soldMap = useMemo(() => {
+    const m = new Map<string, number>();
+    orders.filter((o: any) => !o.is_deleted && o.type !== 'payment').forEach((o: any) => {
+      (o.items || []).forEach((it: any) => {
+        m.set(it.id, (m.get(it.id) || 0) + ((Number(it.quantity) || 0) - (Number(it.returned_quantity) || 0)));
+      });
+    });
+    return m;
+  }, [orders]);
 
   const normalizedSearch = normalizeArabic(searchQuery);
   const searchTerms = normalizedSearch.split(' ').filter(t => t.trim() !== '');
@@ -70,16 +89,17 @@ export default function Inventory() {
   const filteredProducts = products.filter(p => {
     const normalizedName = normalizeArabic(p.name);
     const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => normalizedName.includes(term)) || (p.barcode && p.barcode.includes(searchQuery));
-    const matchesStock = showLowStock ? p.stock_quantity < 5 : true;
+    const matchesStock = showLowStock ? qtyOf(p) < 5 : true;
     const matchesHidden = showHidden ? p.is_hidden === true : !p.is_hidden; // showHidden=true → المخفيين فقط
     const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory;
     return matchesSearch && matchesStock && matchesHidden && matchesCategory;
   }).sort((a, b) => new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime());
   const hiddenCount = products.filter(p => p.is_hidden).length;
-  
-  const totalStockValue = products.reduce((acc, p) => acc + (p.stock_quantity * (p.average_purchase_price || p.purchase_price || 0)), 0);
-  const lowStockCount = products.filter(p => p.stock_quantity < 5).length;
-  const totalItems = products.reduce((acc, p) => acc + p.stock_quantity, 0);
+
+  // الإحصائيات حسب المخزن المختار (الكل / المستودع / المعرض).
+  const totalStockValue = products.reduce((acc, p) => acc + (qtyOf(p) * (p.average_purchase_price || p.purchase_price || 0)), 0);
+  const lowStockCount = products.filter(p => qtyOf(p) < 5).length;
+  const totalItems = products.reduce((acc, p) => acc + qtyOf(p), 0);
 
   const handleToggleHide = (product: Product) => {
     const action = product.is_hidden ? 'إظهار' : 'إخفاء';
@@ -142,6 +162,7 @@ export default function Inventory() {
       sale_price: product.sale_price,
       discount_price: product.discount_price || 0,
       stock_quantity: product.stock_quantity,
+      display_quantity: product.display_quantity || 0,
       category_id: product.category_id,
       unit: product.unit || 'قطعة'
     });
@@ -158,9 +179,11 @@ export default function Inventory() {
       sale_price: 0,
       discount_price: 0,
       stock_quantity: 0,
+      display_quantity: 0,
       category_id: categories[0]?.id || '',
       unit: 'قطعة'
     });
+    setWarehouseQty(0);
     setShowAddModal(true);
   };
 
@@ -184,10 +207,15 @@ export default function Inventory() {
       return;
     }
 
-    const payload = { ...formData, barcode };
+    let payload = { ...formData, barcode };
     if (editingProductId) {
+      // المعروض لا يتجاوز الإجمالي
+      payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
       updateProduct(editingProductId, payload);
     } else {
+      // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو
+      const display = Number(formData.display_quantity) || 0;
+      payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
       addProduct(payload);
       // طباعة ملصقات الباركود بعدد القطع المضافة على طابعة الباركود الحراري
       if (payload.stock_quantity > 0) {
@@ -213,9 +241,11 @@ export default function Inventory() {
       sale_price: 0,
       discount_price: 0,
       stock_quantity: 0,
+      display_quantity: 0,
       category_id: categories[0]?.id || '',
       unit: 'قطعة'
     });
+    setWarehouseQty(0);
   };
 
   const exportExcel = () => {
@@ -223,7 +253,7 @@ export default function Inventory() {
       ['تقرير المخزون والمنتجات', '', '', '', '', ''],
       ['التاريخ', new Date().toLocaleDateString(), '', '', '', ''],
       [''],
-      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', 'المخزون'],
+      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', `المخزون (${stockLocation === 'warehouse' ? 'المستودع' : stockLocation === 'display' ? 'المحل' : 'الكل'})`, 'مستودع', 'محل', 'مباع'],
       ...filteredProducts.map(p => [
         p.barcode,
         p.name,
@@ -232,7 +262,10 @@ export default function Inventory() {
         p.purchase_price,
         p.average_purchase_price,
         p.sale_price,
-        p.stock_quantity
+        qtyOf(p),
+        Math.max(0, (Number(p.stock_quantity) || 0) - dispOf(p)),
+        dispOf(p),
+        soldMap.get(p.id) || 0
       ])
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -338,7 +371,18 @@ export default function Inventory() {
           </div>
         </div>
       </div>
-      
+
+      {/* فلتر المخزن: الكل / المستودع / المحل */}
+      <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit mb-2">
+        <span className="text-xs font-bold text-slate-500 px-2">المخزن:</span>
+        {([['all', 'الكل'], ['warehouse', 'المستودع'], ['display', 'المحل']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setStockLocation(k)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition ${stockLocation === k ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* ADD PRODUCT MODAL */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -397,19 +441,39 @@ export default function Inventory() {
                   <input type="number" min="0" step="0.01" value={formData.discount_price} onChange={e => setFormData({...formData, discount_price: parseFloat(e.target.value) || 0})} style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-amber-500" />
                   <p className="text-xs text-slate-400 mt-1">لو دخلت قيمة هنا، هتبقى هي سعر البيع الفعلي على الكاشير. والباركود لو سيبته فاضي هيتولّد تلقائياً.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">الكمية الحالية في المخزون</label>
-                  <div className="relative">
-                    <input
-                      type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'}
-                      value={formData.stock_quantity}
-                      onChange={e => setFormData({...formData, stock_quantity: parseFloat(e.target.value) || 0})}
-                      style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any}
-                      className="w-full bg-slate-50 border border-slate-200 py-3 pl-16 pr-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500"
-                    />
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">{getUnitConfig(formData.unit).label}</span>
-                  </div>
-                </div>
+                {!editingProductId ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">كمية المستودع</label>
+                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={warehouseQty}
+                        onChange={e => setWarehouseQty(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">كمية المعروض (في المحل)</label>
+                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.display_quantity}
+                        onChange={e => setFormData({...formData, display_quantity: parseFloat(e.target.value) || 0})}
+                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-emerald-500" />
+                      <p className="text-xs text-slate-400 mt-1">الإجمالي = {(Number(warehouseQty) || 0) + (Number(formData.display_quantity) || 0)} {getUnitConfig(formData.unit).label} · الافتراضي كله في المستودع.</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">الإجمالي في المخزون</label>
+                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.stock_quantity}
+                        onChange={e => setFormData({...formData, stock_quantity: parseFloat(e.target.value) || 0})}
+                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1">المعروض في المحل (النقل بين المستودع والمحل)</label>
+                      <input type="number" min="0" max={formData.stock_quantity} step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.display_quantity}
+                        onChange={e => setFormData({...formData, display_quantity: Math.min(parseFloat(e.target.value) || 0, formData.stock_quantity)})}
+                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-emerald-500" />
+                      <p className="text-xs text-slate-400 mt-1">المستودع: <b>{Math.max(0, (Number(formData.stock_quantity) || 0) - (Number(formData.display_quantity) || 0))}</b> · المعروض: <b>{Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0)}</b> · المُباع: <b>{soldMap.get(editingProductId) || 0}</b></p>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">تكلفة شراء الـ{getUnitConfig(formData.unit).label} <span className="text-[10px] text-slate-400">(اختياري)</span></label>
                   <input
@@ -594,7 +658,7 @@ export default function Inventory() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredProducts.map((product) => {
                 const category = categories.find(c => c.id === product.category_id)?.name;
-                const isLowStock = product.stock_quantity < 5;
+                const isLowStock = qtyOf(product) < 5;
                 
                 return (
                   <tr key={product.id} className={`hover:bg-slate-50 transition ${product.is_hidden ? 'opacity-50 bg-slate-50/80' : ''}`}>
@@ -625,9 +689,10 @@ export default function Inventory() {
                         style={{ '--hover-bg': storeSettings.themeColor + '15', '--hover-text': storeSettings.themeColor } as any}
                         className={`flex items-center justify-center gap-2 w-full font-bold px-3 py-1.5 rounded-lg transition group ${isLowStock ? 'bg-red-50 text-red-600' : 'hover:bg-[var(--hover-bg)] hover:text-[var(--hover-text)]'}`}
                       >
-                        {formatQty(product.stock_quantity, product.unit)}
+                        {formatQty(qtyOf(product), product.unit)}
                         <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
                       </button>
+                      <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
                     </td>
 
                     <td className="p-4">
