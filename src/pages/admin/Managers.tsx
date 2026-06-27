@@ -101,14 +101,25 @@ export default function Managers() {
         <p className="text-slate-500 mt-1 font-medium text-sm">سحب أموال من الخزنة باسم المدير (يُخصم من وسيلة الدفع ولا يُحذف)</p>
       </div>
 
+      {/* إجمالي الخزنة الحقيقي */}
+      <div className="bg-gradient-to-l from-indigo-600 to-purple-600 text-white rounded-2xl p-5 flex items-center justify-between">
+        <span className="text-sm font-bold opacity-90">إجمالي المتاح بالخزنة (كل الوسائل)</span>
+        <span className="text-2xl font-black">{(avail.cash + avail.visa + avail.wallet + avail.instapay).toFixed(2)} {cur}</span>
+      </div>
+
       {/* المتاح في كل وسيلة */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {METHODS.map((m) => (
-          <div key={m.key} className="bg-white dark:bg-slate-800 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 text-center">
-            <div className="text-[11px] font-bold text-slate-500">المتاح — {m.label}</div>
-            <div className="text-xl font-black text-emerald-600">{(avail[m.key] || 0).toFixed(2)} {cur}</div>
-          </div>
-        ))}
+        {METHODS.map((m) => {
+          const v = avail[m.key] || 0;
+          const neg = v < 0;
+          return (
+            <div key={m.key} className={`bg-white dark:bg-slate-800 rounded-2xl p-4 border text-center ${neg ? 'border-red-300 dark:border-red-700' : 'border-slate-200 dark:border-slate-700'}`}>
+              <div className="text-[11px] font-bold text-slate-500">المتاح — {m.label}</div>
+              <div className={`text-xl font-black ${neg ? 'text-red-600' : 'text-emerald-600'}`}>{v.toFixed(2)} {cur}</div>
+              {neg && <div className="text-[9px] font-bold text-red-500 mt-1">مسحوب منها أكثر من رصيدها</div>}
+            </div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
