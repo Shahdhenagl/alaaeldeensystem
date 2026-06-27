@@ -29,7 +29,7 @@ export default function POSLogin() {
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-           {storeSettings.logo && <img src={storeSettings.logo} alt="Logo" className="w-20 h-20 mx-auto rounded-3xl shadow-xl mb-4 p-1 bg-white" />}
+           {storeSettings.logo && <img src={storeSettings.logo} alt="Logo" className="h-20 w-auto max-w-[220px] mx-auto rounded-3xl shadow-xl mb-4 p-1 bg-white object-contain" />}
            <h1 className="text-3xl font-black text-slate-800 dark:text-white mb-2">{storeSettings.name}</h1>
            <p className="text-slate-500 font-bold">نظام الكاشير الذكي</p>
         </div>

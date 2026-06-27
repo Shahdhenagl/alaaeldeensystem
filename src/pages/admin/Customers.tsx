@@ -358,7 +358,7 @@ export default function Customers() {
     *{margin:0;padding:0;box-sizing:border-box;}
     body{font-family:'Segoe UI',Arial,sans-serif;background:#fff;color:#111;width:320px;margin:0 auto;padding:16px;}
     .header{text-align:center;border-bottom:2px dashed #333;padding-bottom:12px;margin-bottom:12px;}
-    .logo{width:64px;height:64px;object-fit:cover;border-radius:12px;margin-bottom:6px;}
+    .logo{height:64px;width:auto;max-width:260px;object-fit:contain;border-radius:12px;margin-bottom:6px;}
     .store-name{font-size:18px;font-weight:900;margin-bottom:4px;}
     .store-info{font-size:11px;color:#555;line-height:1.7;}
     .invoice-meta{display:flex;justify-content:space-between;font-size:11px;color:#555;margin:8px 0;background:#f5f5f5;padding:6px 8px;border-radius:6px;}

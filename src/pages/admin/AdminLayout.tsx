@@ -76,7 +76,7 @@ export default function AdminLayout() {
       <div className="w-64 bg-slate-900 text-slate-300 flex flex-col shadow-2xl z-20">
         <div className="p-6 pb-2">
           <div className="flex items-center gap-3 bg-slate-800 p-3 rounded-2xl mb-8 border border-slate-700">
-            <img src={storeSettings.logo} alt="Logo" className="w-10 h-10 rounded-xl bg-white object-cover" />
+            <img src={storeSettings.logo} alt="Logo" className="h-10 w-auto max-w-[120px] rounded-xl bg-white object-contain" />
             <div className="flex flex-col flex-1 min-w-0">
               <span className="font-bold text-white text-sm truncate" title={storeSettings.name}>{storeSettings.name}</span>
               <span className="text-xs text-slate-400">لوحة الإدارة</span>

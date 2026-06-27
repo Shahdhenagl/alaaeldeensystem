@@ -330,7 +330,7 @@ export default function PublicInvoice() {
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-right">
               {settings.logo && (
                 <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm shrink-0">
-                  <img src={settings.logo} alt="Logo" className="w-16 h-16 object-contain animate-fade-in" />
+                  <img src={settings.logo} alt="Logo" className="h-16 w-auto max-w-[220px] object-contain animate-fade-in" />
                 </div>
               )}
               <div className="flex flex-col justify-center">

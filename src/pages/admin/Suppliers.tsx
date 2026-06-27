@@ -360,7 +360,7 @@ export default function Suppliers() {
   
   .header-main{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #1e293b;padding-bottom:15px;margin-bottom:20px;}
   .store-identity{display:flex;align-items:center;gap:15px;}
-  .logo{width:70px;height:70px;object-fit:contain;border-radius:12px;}
+  .logo{height:64px;width:auto;max-width:260px;object-fit:contain;border-radius:12px;}
   .store-name{font-size:24px;font-weight:900;color:#1e293b;}
   .store-details{font-size:11px;color:#64748b;margin-top:5px;line-height:1.5;}
   
