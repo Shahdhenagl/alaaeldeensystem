@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { useStore, type Employee, type EmployeeTransaction, type EmployeeLeave } from '../../store/useStore';
-import { 
-  Users, Plus, Trash2, Edit3, Search, X, 
+import {
+  Users, Plus, Trash2, Edit3, Search, X,
   Wallet, Landmark, CreditCard, Zap, Phone,
-  DollarSign, Briefcase, ArrowRight, FileText, CalendarDays, Gift, UserCheck, UserX
+  DollarSign, Briefcase, ArrowRight, FileText, CalendarDays, Gift, UserCheck, UserX, Download
 } from 'lucide-react';
 
 export default function Employees() {
@@ -48,6 +49,7 @@ export default function Employees() {
   const [profileTimeFilter, setProfileTimeFilter] = useState<'month' | 'week' | 'all' | 'custom_month' | 'custom_year'>('month');
   const [profileCustomMonth, setProfileCustomMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [profileCustomYear, setProfileCustomYear] = useState<string>(new Date().getFullYear().toString());
+  const [payrollMonth, setPayrollMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
   const [empFormData, setEmpFormData] = useState({
     name: '',
@@ -200,6 +202,32 @@ export default function Employees() {
     const remaining = Math.max(0, emp.monthly_salary - advances - paidSalary - deductions - leaveDeductions);
 
     return { salary: emp.monthly_salary, advances, paidSalary, deductions: deductions + leaveDeductions, incentives, leaveDeductions, remaining };
+  };
+
+  // تصدير كشف الرواتب للشهر المحدد (Excel)
+  const exportPayroll = () => {
+    const rows = employees.map((emp) => {
+      const s = getEmployeeMonthStats(emp.id, payrollMonth);
+      const sales = employeeMonthStats(emp, payrollMonth);
+      return {
+        'الموظف': emp.name,
+        'الوظيفة': emp.job_title || '',
+        'الراتب الشهري': Number(emp.monthly_salary) || 0,
+        'السلف': s.advances,
+        'الحوافز': s.incentives,
+        'الخصومات': s.deductions,
+        'الراتب المدفوع': s.paidSalary,
+        'المتبقي': s.remaining,
+        'مبيعاته (كبائع)': sales.sales,
+        'أرباحه للشركة': sales.profit,
+        'نسبة العمولة %': Number(emp.commission_rate) || 0,
+      };
+    });
+    if (rows.length === 0) { alert('لا يوجد موظفون'); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'الرواتب');
+    XLSX.writeFile(wb, `كشف_الرواتب_${payrollMonth}.xlsx`);
   };
 
   // --- Profile Logic ---
@@ -512,6 +540,10 @@ export default function Employees() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-slate-50 border border-slate-200 rounded-2xl pr-12 pl-4 py-3 focus:ring-2 focus:ring-indigo-500/20 outline-none font-medium w-64"
             />
+          </div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2">
+            <input type="month" value={payrollMonth} onChange={(e) => setPayrollMonth(e.target.value)} className="bg-transparent text-sm font-bold outline-none" />
+            <button onClick={exportPayroll} className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition"><Download size={16} /> كشف الرواتب Excel</button>
           </div>
           <div className="flex gap-1 bg-slate-100 p-1 rounded-2xl">
             {[
