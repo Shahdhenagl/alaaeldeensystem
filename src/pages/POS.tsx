@@ -708,7 +708,7 @@ export default function POS() {
       const prod = products.find(p => p.id === item.id);
       const hasDisc = prod && (prod.discount_price || 0) > 0 && Math.abs(item.sale_price - (prod.discount_price || 0)) < 0.01 && prod.sale_price > (prod.discount_price || 0);
       const priceCell = hasDisc
-        ? `<span style="text-decoration:line-through;color:#999;font-size:8px;">${prod!.sale_price.toFixed(2)}</span> ${item.sale_price.toFixed(2)}`
+        ? `<span style="display:block;text-decoration:line-through;color:#000;font-size:10px;font-weight:600;">${prod!.sale_price.toFixed(2)}</span><span style="font-weight:900;">${item.sale_price.toFixed(2)}</span>`
         : item.sale_price.toFixed(2);
       return `<tr>
         <td style="text-align:center;">${index + 1}</td>
