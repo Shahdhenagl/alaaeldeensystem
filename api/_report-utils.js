@@ -131,12 +131,21 @@ export async function fetchReportData(supabase, start, end) {
     supabase.from('products').select('*').order('name'),
   ]);
 
+  // الخزائن والعهد (جداول قد لا تكون موجودة في قواعد قديمة → نتجاهل الخطأ)
+  const safe = async (q) => { try { const r = await q; return r.data || []; } catch { return []; } };
+  const [savings, partnerTxns] = await Promise.all([
+    safe(supabase.from('savings_transactions').select('*').gte('created_at', start.toISOString()).lt('created_at', end.toISOString())),
+    safe(supabase.from('partner_transactions').select('*').gte('created_at', start.toISOString()).lt('created_at', end.toISOString())),
+  ]);
+
   return {
     orders: ordersRes.data || [],
     expenses: expensesRes.data || [],
     purchases: purchasesRes.data || [],
     employeeTransactions: employeeTransactionsRes.data || [],
     products: productsRes.data || [],
+    savings,
+    partnerTxns,
   };
 }
 

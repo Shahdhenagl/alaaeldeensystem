@@ -56,6 +56,26 @@ export function buildDailyMessage(settings, range, data, openingBalance) {
     `مصروفات مسجلة: ${data.expenses.filter((expense) => Number(expense.amount || 0) > 0).length}`,
   ];
 
+  // ── حركة الخزائن والعهد (تظهر فقط لو فيها حركات) ──
+  const sum = (arr) => arr.reduce((s, x) => s + Math.abs(Number(x.amount) || 0), 0);
+  const managerWithdrawals = sum(data.expenses.filter((e) => e.category === 'سحب مدير'));
+  const savings = data.savings || [];
+  const savingsIn = sum(savings.filter((t) => t.direction === 'in'));
+  const savingsOut = sum(savings.filter((t) => t.direction === 'out'));
+  const partnerTxns = data.partnerTxns || [];
+  const partnerDeposits = sum(partnerTxns.filter((t) => t.type === 'deposit'));
+  const partnerWithdrawals = sum(partnerTxns.filter((t) => t.type === 'withdraw'));
+
+  const treasuryLines = [];
+  if (managerWithdrawals > 0) treasuryLines.push(`- سحوبات المديرين: ${money(managerWithdrawals, currency)}`);
+  if (savingsIn > 0) treasuryLines.push(`- تحويل لخزنة الادخار: ${money(savingsIn, currency)}`);
+  if (savingsOut > 0) treasuryLines.push(`- تحويل من الادخار للمحل: ${money(savingsOut, currency)}`);
+  if (partnerDeposits > 0) treasuryLines.push(`- إيداعات الشركاء: ${money(partnerDeposits, currency)}`);
+  if (partnerWithdrawals > 0) treasuryLines.push(`- سحوبات الشركاء (عهدة): ${money(partnerWithdrawals, currency)}`);
+  if (treasuryLines.length) {
+    lines.push('', 'حركة الخزائن والعهد:', ...treasuryLines);
+  }
+
   if (topProducts.length) {
     lines.push('', 'أكثر المنتجات مبيعًا اليوم:');
     topProducts.forEach((product, index) => {
