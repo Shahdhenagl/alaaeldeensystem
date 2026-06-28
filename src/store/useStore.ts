@@ -1461,6 +1461,7 @@ export const useStore = create<CashierStore>((set, get) => ({
       sendTelegramAlert({
         type: type === 'payment' ? 'payment' : 'sale',
         actor: finalCashierName,
+        salesperson: sp?.name || undefined,
         currency: state.storeSettings.currency,
         invoiceId,
         invoiceUrl: getPublicInvoiceUrl(invoiceId),

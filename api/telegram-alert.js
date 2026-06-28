@@ -105,6 +105,7 @@ function formatMessage(payload) {
   const lines = baseLines(payload);
 
   if (payload.invoiceId) lines.push(line('رقم الفاتورة', `#${payload.invoiceId}`));
+  if (payload.salesperson) lines.push(line('مسؤول المبيعات', payload.salesperson));
   if (payload.customer) lines.push(line('العميل', payload.customer));
   if (payload.supplier) lines.push(line('المورد', payload.supplier));
   if (payload.lender) lines.push(line('صاحب السلفة / الجمعية', payload.lender));

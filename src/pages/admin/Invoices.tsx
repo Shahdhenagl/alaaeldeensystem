@@ -22,6 +22,7 @@ export default function Invoices() {
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedCashier, setSelectedCashier] = useState<string>('all');
+  const [selectedSalesperson, setSelectedSalesperson] = useState<string>('all');
   const [loading, setLoading] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
 
@@ -272,6 +273,13 @@ export default function Invoices() {
     return Array.from(c).sort();
   }, [visibleOrders]);
 
+  // Extract unique salespeople from orders
+  const uniqueSalespeople = useMemo(() => {
+    const s = new Set<string>();
+    visibleOrders.forEach(o => { if ((o as any).salesperson_name) s.add((o as any).salesperson_name); });
+    return Array.from(s).sort();
+  }, [visibleOrders]);
+
   const handleDeleteOrder = async (order: any) => {
     const message = [
       `هل أنت متأكد من حذف الفاتورة #${order.id}؟`,
@@ -386,10 +394,11 @@ export default function Invoices() {
         (o.customer?.phone || '').includes(searchStr);
 
       const matchesCashier = selectedCashier === 'all' || o.cashier_name === selectedCashier;
+      const matchesSalesperson = selectedSalesperson === 'all' || (o as any).salesperson_name === selectedSalesperson;
 
-      return matchesDay && matchesMonth && matchesYear && matchesReturns && matchesDeferred && matchesSearch && matchesCashier;
+      return matchesDay && matchesMonth && matchesYear && matchesReturns && matchesDeferred && matchesSearch && matchesCashier && matchesSalesperson;
     });
-  }, [visibleOrders, searchQuery, showReturnsOnly, showDeferredOnly, selectedDay, selectedMonth, selectedYear, selectedCashier]);
+  }, [visibleOrders, searchQuery, showReturnsOnly, showDeferredOnly, selectedDay, selectedMonth, selectedYear, selectedCashier, selectedSalesperson]);
 
   const totalInvoiceProfit = useMemo(() => {
     return filteredOrders.reduce((sum, order) => sum + calculateInvoiceProfit(order), 0);
@@ -493,6 +502,16 @@ export default function Invoices() {
               <option value="all">كل المحاسبين</option>
               {uniqueCashiers.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+
+            <select
+              value={selectedSalesperson}
+              onChange={e => setSelectedSalesperson(e.target.value)}
+              style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any}
+              className="bg-white border border-slate-200 rounded-xl p-2.5 text-sm focus:ring-2 outline-none"
+            >
+              <option value="all">كل مسؤولي المبيعات</option>
+              {uniqueSalespeople.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
         </div>
 
@@ -582,6 +601,7 @@ export default function Invoices() {
                 <th className="p-4">بيانات العميل</th>
                 <th className="p-4">التاريخ والوقت</th>
                 <th className="p-4 text-center">المسؤول</th>
+                <th className="p-4 text-center">مسؤول المبيعات</th>
                 <th className="p-4">تفاصيل المنتجات</th>
                 <th className="p-4 text-center border-x border-slate-100 bg-slate-100/50">الإجمالي</th>
                 <th className="p-4 text-center text-emerald-600 bg-emerald-50/50">الربح</th>
@@ -595,7 +615,7 @@ export default function Invoices() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="p-12 text-center text-slate-400 text-lg font-bold">
+                  <td colSpan={13} className="p-12 text-center text-slate-400 text-lg font-bold">
                     لا يوجد فواتير تطابق بحثك حالياً.
                   </td>
                 </tr>
@@ -636,6 +656,7 @@ export default function Invoices() {
                       </td>
                       <td className="p-4 text-slate-500">{new Date(order.date).toLocaleString('ar-SA')}</td>
                       <td className="p-4 text-center font-bold text-indigo-600">{order.cashier_name || 'غير معروف'}</td>
+                      <td className="p-4 text-center font-bold text-purple-600">{(order as any).salesperson_name || '—'}</td>
                       <td className="p-4 text-right">
                         {order.is_deleted ? (
                           <span className="inline-flex items-center gap-1 bg-red-100 text-red-600 px-3 py-1 rounded-lg text-xs font-bold">

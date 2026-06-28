@@ -775,6 +775,7 @@ export default function POS() {
   </div>
 
   ${customerBlock}
+  ${orderDetails.salesperson ? `<div class="customer-info-grid"><div class="info-item"><strong>مسؤول المبيعات:</strong> <span>${escapeHtml(orderDetails.salesperson)}</span></div></div>` : ''}
 
   <table>
     <thead><tr>
@@ -849,6 +850,7 @@ export default function POS() {
     const currentCustomerCard = customerId;
     const currentCouponCode = validCoupon?.code;
     const currentCouponDiscount = couponDiscountAmount;
+    const currentSalesperson = salesperson?.name || ''; // قبل ما الـ checkout يصفّره
     const matchedCustomer = customers.find(c =>
       (currentCustomerPhone && c.phone === currentCustomerPhone) ||
       (currentCustomerCard && (c.card_number === currentCustomerCard || c.custom_id === currentCustomerCard))
@@ -944,7 +946,8 @@ export default function POS() {
       paymentMethod: primaryMethod,
       totalDebt: (customerDebt || 0) + (currentTotal - effectivePaidAmount),
       couponCode: currentCouponCode,
-      couponDiscountAmount: currentCouponDiscount
+      couponDiscountAmount: currentCouponDiscount,
+      salesperson: currentSalesperson
     };
 
     const actualCustomer = useStore.getState().customers.find(c =>
