@@ -816,10 +816,10 @@ export default function POS() {
   @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;font-family:'Cairo', sans-serif;}
   body{background:#fff;color:#000;margin:0;}
-  .invoice-container{width:72mm;margin:0 auto;padding:2mm 1.5mm;display:flex;flex-direction:column;}
+  .invoice-container{width:72mm;margin:0 auto;padding:0 1.5mm 2mm;display:flex;flex-direction:column;}
 
-  .header-main{text-align:center;border-bottom:1px dashed #000;padding-bottom:4px;margin-bottom:4px;}
-  .logo{max-height:48px;max-width:50mm;width:auto;object-fit:contain;display:block;margin:0 auto 2px;}
+  .header-main{text-align:center;border-bottom:1px dashed #000;padding-bottom:3px;margin-bottom:3px;}
+  .logo{max-height:42px;max-width:48mm;width:auto;object-fit:contain;display:block;margin:0 auto 1px;}
   .store-name{font-size:18px;font-weight:900;color:#000;line-height:1.1;}
   .store-details{font-size:10px;color:#000;margin-top:1px;line-height:1.3;font-weight:bold;}
 
@@ -843,11 +843,11 @@ export default function POS() {
   .status-paid{background:#fff;color:#000;}
   .status-debt{background:#fff;color:#000;}
 
-  .qr-code-container{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:6px;}
-  .qr-code-img{width:80px;height:80px;}
-  .qr-label{font-size:10px;font-weight:900;color:#000;}
+  .qr-code-container{display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:4px;}
+  .qr-code-img{width:68px;height:68px;}
+  .qr-label{font-size:9px;font-weight:900;color:#000;}
 
-  .footer{text-align:center;margin-top:6px;padding-top:4px;border-top:1px dashed #000;font-size:10px;color:#000;font-weight:bold;}
+  .footer{text-align:center;margin-top:4px;padding-top:3px;border-top:1px dashed #000;font-size:9px;color:#000;font-weight:bold;}
 
   @media print{
     @page{size:72mm auto;margin:0;}
@@ -859,11 +859,10 @@ export default function POS() {
 <body>
 <div class="invoice-container">
   <div class="header-main">
-    <img class="logo" src="${escapeHtml(currentSettings.logo)}" onerror="this.style.display='none'" />
-    <div class="store-name">${escapeHtml(currentSettings.name)}</div>
+    ${currentSettings.logo ? `<img class="logo" src="${escapeHtml(currentSettings.logo)}" onerror="this.style.display='none'" />` : `<div class="store-name">${escapeHtml(currentSettings.name)}</div>`}
     <div class="store-details">
-      ${currentSettings.address ? `📍 ${escapeHtml(currentSettings.address)}<br/>` : ''}
-      ${currentSettings.phone ? `📞 ${escapeHtml(currentSettings.phone)}` : ''}
+      ${currentSettings.address ? `${escapeHtml(currentSettings.address)}<br/>` : ''}
+      ${currentSettings.phone ? `${escapeHtml(currentSettings.phone)}` : ''}
       ${currentSettings.phone2 ? ` | ${escapeHtml(currentSettings.phone2)}` : ''}
     </div>
   </div>
@@ -892,26 +891,30 @@ export default function POS() {
     ${(orderDetails.paidAmount !== undefined && orderDetails.paidAmount < orderDetails.total) ? `
       <div class="payment-status status-debt">
         <div>متبقي للتحصيل (آجل): ${(orderDetails.total - (orderDetails.paidAmount || 0)).toFixed(2)} ${currentSettings.currency}</div>
-        <div style="font-size:11px;opacity:0.8;margin-top:2px;">تم سداد: ${(orderDetails.paidAmount || 0).toFixed(2)} ${currentSettings.currency}</div>
+        <div style="font-size:12px;font-weight:700;margin-top:2px;">تم سداد: ${(orderDetails.paidAmount || 0).toFixed(2)} ${currentSettings.currency}</div>
       </div>
     ` : `
       <div class="payment-status status-paid">✓ تم سداد الفاتورة بالكامل</div>
     `}
 
     ${orderDetails.notes ? `
-      <div style="margin-top:10px; padding:8px; background:#fff7ed; border-radius:8px; border:1px solid #ffedd5;">
-        <div style="font-size:11px; color:#c2410c; margin-bottom:4px; font-weight:bold;">ملاحظات:</div>
-        <div style="font-size:12px; color:#9a3412;">${escapeHtml(orderDetails.notes)}</div>
+      <div style="margin-top:5px; padding:4px 5px; border:1px solid #000; border-radius:4px;">
+        <span style="font-size:10px; font-weight:900;">ملاحظات: </span>
+        <span style="font-size:11px; font-weight:700;">${escapeHtml(orderDetails.notes)}</span>
       </div>
     ` : ''}
     
-    <div style="margin-top:10px; padding:8px; background:#f9fafb; border-radius:8px; border:1px solid #eee;">
-      <div style="font-size:11px; color:#64748b; margin-bottom:4px; border-bottom:1px solid #eee; padding-bottom:2px; text-align:right;">تفاصيل الدفع:</div>
-      ${orderDetails.splitPayments.cash > 0 ? `<div class="summary-row" style="font-size:12px;"><span>💵 كاش:</span><span>${orderDetails.splitPayments.cash.toFixed(2)}</span></div>` : ''}
-      ${orderDetails.splitPayments.visa > 0 ? `<div class="summary-row" style="font-size:12px;"><span>💳 فيزا:</span><span>${orderDetails.splitPayments.visa.toFixed(2)}</span></div>` : ''}
-      ${orderDetails.splitPayments.wallet > 0 ? `<div class="summary-row" style="font-size:12px;"><span>📱 محفظة:</span><span>${orderDetails.splitPayments.wallet.toFixed(2)}</span></div>` : ''}
-      ${orderDetails.splitPayments.instapay > 0 ? `<div class="summary-row" style="font-size:12px;"><span>⚡ انستا باي:</span><span>${orderDetails.splitPayments.instapay.toFixed(2)}</span></div>` : ''}
-    </div>
+    ${(() => {
+      const sp = orderDetails.splitPayments || {};
+      const parts = [];
+      if (sp.cash > 0) parts.push(`كاش: ${sp.cash.toFixed(2)}`);
+      if (sp.visa > 0) parts.push(`فيزا: ${sp.visa.toFixed(2)}`);
+      if (sp.wallet > 0) parts.push(`محفظة: ${sp.wallet.toFixed(2)}`);
+      if (sp.instapay > 0) parts.push(`انستا: ${sp.instapay.toFixed(2)}`);
+      if (parts.length === 0) return '';
+      const cells = parts.map(p => `<div style="width:50%;font-size:11px;font-weight:700;padding:1px 0;">${p}</div>`).join('');
+      return `<div style="margin-top:4px;padding:4px 5px;border:1px solid #000;border-radius:4px;"><div style="font-size:10px;font-weight:900;margin-bottom:2px;">طرق الدفع:</div><div style="display:flex;flex-wrap:wrap;">${cells}</div></div>`;
+    })()}
   </div>
 
   <div class="qr-code-container">
@@ -919,7 +922,7 @@ export default function POS() {
     <div class="qr-label">امسح الكود لعرض الفاتورة</div>
   </div>
 
-  <div class="footer">شكراً لثقتكم بنا - ${escapeHtml(currentSettings.name)} ترحب بكم دائماً</div>
+  <div class="footer">شكراً لتعاملكم معنا</div>
 </div>
 <script>window.onload=()=>{setTimeout(()=>{window.print();window.onafterprint=()=>window.close();},500);}<\/script>
 </body></html>`;
