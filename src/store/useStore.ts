@@ -159,6 +159,8 @@ export interface Order {
   refund_method?: string;
   customer?: Customer;
   cashier_name?: string;
+  salesperson_id?: string; // الموظف البائع (لحساب مبيعاته/أرباحه للعمولة)
+  salesperson_name?: string;
   isOffline?: boolean;
   is_deleted?: boolean;
   deleted_at?: string | null;
@@ -349,6 +351,7 @@ interface CashierStore {
   productionOrders: ProductionOrder[];
   cart: OrderItem[];
   invoiceType: 'retail' | 'half' | 'wholesale';
+  salesperson: { id: string; name: string } | null;
   orders: Order[];
   expenses: Expense[];
   financingAccounts: FinancingAccount[];
@@ -382,6 +385,7 @@ interface CashierStore {
   updatePrice: (productId: string, price: number) => void;
   clearCart: () => void;
   setInvoiceType: (t: 'retail' | 'half' | 'wholesale') => void;
+  setSalesperson: (sp: { id: string; name: string } | null) => void;
 
   // Operations
   checkout: (
@@ -688,6 +692,8 @@ export const useStore = create<CashierStore>((set, get) => ({
   productionOrders: [],
   cart: [],
   invoiceType: 'retail',
+  salesperson: null,
+  setSalesperson: (sp) => set({ salesperson: sp }),
   orders: [],
   expenses: [],
   financingAccounts: [],
@@ -853,6 +859,8 @@ export const useStore = create<CashierStore>((set, get) => ({
           date: o.created_at as string,
           items,
           cashier_name: (o.cashier_name as string) ?? undefined,
+          salesperson_id: (o.salesperson_id as string) ?? undefined,
+          salesperson_name: (o.salesperson_name as string) ?? undefined,
           is_deleted: Boolean(o.is_deleted),
           deleted_at: (o.deleted_at as string) ?? null,
           deletion_reason: (o.deletion_reason as string) ?? null,
@@ -1079,6 +1087,8 @@ export const useStore = create<CashierStore>((set, get) => ({
           customer_id: customerId,
           payment_method: offlineOrder.payment_method,
           cashier_name: offlineOrder.cashier_name,
+          salesperson_id: offlineOrder.salesperson_id || null,
+          salesperson_name: offlineOrder.salesperson_name || null,
           coupon_code: offlineOrder.coupon_code || null,
           discount_amount: offlineOrder.discount_amount || 0,
           created_at: offlineOrder.date
@@ -1191,6 +1201,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   checkout: async (total, customerDetails, paidAmount = total, type = 'sale', paymentMethod = 'cash', splitPayments, cashierName, notes, couponCode, discountAmount, carId) => {
     const state = get();
     const finalCashierName = cashierName || state.activeCashier?.name || 'مدير النظام';
+    const sp = state.salesperson;
     if (state.cart.length === 0 && type !== 'payment' && type !== 'previous_debt') return state.activeInvoiceId;
 
     const savedPaidAmount = type === 'payment' ? paidAmount : Math.min(total, paidAmount);
@@ -1241,6 +1252,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         date: new Date().toISOString(),
         customer: finalCustomer,
         cashier_name: finalCashierName,
+        salesperson_id: sp?.id || undefined,
+        salesperson_name: sp?.name || undefined,
         notes: notes || null,
         coupon_code: couponCode || null,
         discount_amount: discountAmount || 0,
@@ -1265,6 +1278,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         orders: [newOfflineOrder, ...state.orders],
         cart: [],
         invoiceType: 'retail',
+        salesperson: null,
         products: updatedProducts,
         customers: updatedCustomers,
         offlineQueue: updatedQueue
@@ -1363,6 +1377,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         customer_id: customerId,
         payment_method: paymentMethod,
         cashier_name: finalCashierName,
+        salesperson_id: sp?.id || null,
+        salesperson_name: sp?.name || null,
         notes: notes || null,
         coupon_code: couponCode || null,
         discount_amount: discountAmount || 0,
@@ -1413,6 +1429,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         date: new Date().toISOString(),
         customer: finalCustomer,
         cashier_name: finalCashierName,
+        salesperson_id: sp?.id,
+        salesperson_name: sp?.name,
         notes: notes || null,
         car_id: carId || undefined
       };
@@ -1430,6 +1448,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         orders: [newOrder, ...state.orders],
         cart: [],
         invoiceType: 'retail',
+        salesperson: null,
         products: updatedProducts,
         customers: updatedCustomers,
         invoiceCounter: nextCounter,

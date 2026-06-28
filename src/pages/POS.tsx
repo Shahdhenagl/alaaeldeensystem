@@ -10,8 +10,44 @@ import { openPrintWindow } from '../utils/printWindow';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson } = useStore();
   const [posSeason, setPosSeason] = useState<'all' | 'summer' | 'winter'>('all');
+  // OTP gate for wholesale / half-wholesale: prices hidden + checkout blocked until verified.
+  const [wholesaleUnlocked, setWholesaleUnlocked] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const pricesHidden = invoiceType !== 'retail' && !wholesaleUnlocked;
+  useEffect(() => { setWholesaleUnlocked(false); setOtpInput(''); setOtpSent(false); }, [invoiceType]);
+
+  const requestOtp = async () => {
+    setOtpBusy(true);
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const r = await fetch('/api/wholesale-otp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ action: 'request' }) });
+      const j = await r.json();
+      if (j.ok) { setOtpSent(true); alert('تم إرسال رمز التأكيد على تليجرام 📲'); }
+      else alert('تعذّر إرسال الرمز: ' + (j.error || ''));
+    } catch (e) { alert('تعذّر إرسال الرمز'); }
+    setOtpBusy(false);
+  };
+
+  const verifyOtp = async () => {
+    if (!otpInput.trim()) { alert('أدخل الرمز'); return; }
+    setOtpBusy(true);
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const r = await fetch('/api/wholesale-otp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ action: 'verify', code: otpInput.trim() }) });
+      const j = await r.json();
+      if (j.ok) { setWholesaleUnlocked(true); setOtpInput(''); }
+      else alert(j.error || 'رمز غير صحيح');
+    } catch (e) { alert('تعذّر التحقق من الرمز'); }
+    setOtpBusy(false);
+  };
   const navigate = useNavigate();
 
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -1870,6 +1906,7 @@ export default function POS() {
                   <div className="pt-2">
                     <h3 className="font-bold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight text-base">{product.name}</h3>
                     {/* Purchase cost info for cashier */}
+                    {!pricesHidden && (
                     <div className="mt-2 space-y-0.5">
                       <div className="flex items-center gap-1.5 text-[11px]">
                         <span className="text-slate-400 font-medium">آخر شراء:</span>
@@ -1880,11 +1917,13 @@ export default function POS() {
                         <span className="font-bold text-indigo-500">{avgPrice.toFixed(2)} {storeSettings.currency}</span>
                       </div>
                     </div>
+                    )}
                   </div>
                   <div className="flex items-end justify-between mt-3 pt-2 border-t border-gray-100 dark:border-slate-700">
                     <div>
                       <p className="text-[10px] text-slate-400 font-medium mb-0.5">سعر البيع / {getUnitConfig(product.unit).label}</p>
                       {(() => {
+                        if (pricesHidden) return <span className="text-slate-400 font-black text-lg">🔒</span>;
                         const wholesale = invoiceType === 'wholesale' && (product.wholesale_price || 0) > 0;
                         const half = invoiceType === 'half' && (product.half_wholesale_price || 0) > 0;
                         if (wholesale || half) {
@@ -2018,20 +2057,26 @@ export default function POS() {
                 </div>
                 <div className="flex items-center justify-between pt-2 mt-0.5 border-t border-gray-50 dark:border-slate-700/50">
                   <div className="flex flex-col">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">سعر {getUnitConfig(item.unit).label}:</label>
-                      {(() => { const prod = products.find(p => p.id === item.id); return prod && (prod.discount_price || 0) > 0 && Math.abs(item.sale_price - (prod.discount_price || 0)) < 0.01 && prod.sale_price > (prod.discount_price || 0) ? (<span className="text-[9px] text-gray-400 line-through">{prod.sale_price}</span>) : null; })()}
-                      <input
-                        type="number"
-                        dir="ltr"
-                        value={item.sale_price}
-                        onChange={(e) => updatePrice(item.id, parseFloat(e.target.value) || 0)}
-                        className="w-16 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-none rounded-md px-1.5 py-0.5 text-xs font-black focus:ring-1 focus:ring-indigo-400 transition text-center"
-                      />
-                    </div>
-                    <span className="font-black text-lg text-indigo-600 dark:text-indigo-400">
-                      {(item.sale_price * item.quantity).toFixed(2)} <span className="text-[10px] text-gray-500">{storeSettings.currency}</span>
-                    </span>
+                    {pricesHidden ? (
+                      <span className="font-black text-lg text-slate-400">🔒 السعر مخفي</span>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">سعر {getUnitConfig(item.unit).label}:</label>
+                          {(() => { const prod = products.find(p => p.id === item.id); return prod && (prod.discount_price || 0) > 0 && Math.abs(item.sale_price - (prod.discount_price || 0)) < 0.01 && prod.sale_price > (prod.discount_price || 0) ? (<span className="text-[9px] text-gray-400 line-through">{prod.sale_price}</span>) : null; })()}
+                          <input
+                            type="number"
+                            dir="ltr"
+                            value={item.sale_price}
+                            onChange={(e) => updatePrice(item.id, parseFloat(e.target.value) || 0)}
+                            className="w-16 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-none rounded-md px-1.5 py-0.5 text-xs font-black focus:ring-1 focus:ring-indigo-400 transition text-center"
+                          />
+                        </div>
+                        <span className="font-black text-lg text-indigo-600 dark:text-indigo-400">
+                          {(item.sale_price * item.quantity).toFixed(2)} <span className="text-[10px] text-gray-500">{storeSettings.currency}</span>
+                        </span>
+                      </>
+                    )}
                   </div>
 
                   {isFractionalUnit(item.unit) ? (
@@ -2062,9 +2107,35 @@ export default function POS() {
 
         {/* Footer Checkout */}
         <div className="p-3 bg-white dark:bg-slate-800 border-t border-gray-100 dark:border-slate-700 shadow-2xl">
+          {/* Salesperson (for commission tracking) */}
+          <div className="mb-3">
+            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block mb-1">👤 الموظف البائع (لحساب مبيعاته وعمولته)</label>
+            <select
+              value={salesperson?.id || ''}
+              onChange={(e) => { const emp = employees.find((x) => x.id === e.target.value); setSalesperson(emp ? { id: emp.id, name: emp.name } : null); }}
+              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+            >
+              <option value="">— بدون تحديد —</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}{emp.job_title ? ` (${emp.job_title})` : ''}</option>)}
+            </select>
+          </div>
+
+          {/* Wholesale / half OTP gate */}
+          {pricesHidden && (
+            <div className="mb-3 bg-purple-50 dark:bg-purple-900/20 rounded-2xl p-3 border-2 border-purple-300 dark:border-purple-700">
+              <div className="text-sm font-black text-purple-800 dark:text-purple-300 flex items-center gap-2">🔒 فاتورة {invoiceType === 'wholesale' ? 'جملة' : 'نص جملة'} — الأسعار مقفولة</div>
+              <p className="text-[11px] text-purple-600 dark:text-purple-400 mt-1 mb-2">محتاج رمز تأكيد (OTP) بيوصل على تليجرام عشان تشوف الأسعار وتعمل الفاتورة.</p>
+              <div className="flex gap-2">
+                <button onClick={requestOtp} disabled={otpBusy} className="shrink-0 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">{otpSent ? 'إعادة إرسال' : 'اطلب رمز'}</button>
+                <input value={otpInput} onChange={(e) => setOtpInput(e.target.value)} placeholder="الرمز" dir="ltr" className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 rounded-lg px-3 py-2 text-center font-black tracking-widest text-slate-800 dark:text-slate-100" />
+                <button onClick={verifyOtp} disabled={otpBusy} className="shrink-0 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold px-3 py-2 rounded-lg">تأكيد</button>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2 mb-3 px-1">
             <div className="flex justify-between items-center text-sm font-bold text-slate-500 dark:text-slate-400">
-              <span>المجموع: <span className="text-slate-800 dark:text-slate-200 text-lg">{subtotal.toFixed(2)}</span></span>
+              <span>المجموع: <span className="text-slate-800 dark:text-slate-200 text-lg">{pricesHidden ? '🔒' : subtotal.toFixed(2)}</span></span>
               <div className="flex items-center gap-2 bg-orange-100/50 dark:bg-orange-900/30 px-4 py-2 rounded-2xl border-2 border-orange-200 dark:border-orange-800/50 shadow-sm transition-all focus-within:border-orange-400 focus-within:ring-2 focus-within:ring-orange-100">
                 <span className="text-xs text-orange-600 dark:text-orange-400 font-black flex items-center gap-1">🏷️ خصم:</span>
                 <input
@@ -2105,9 +2176,9 @@ export default function POS() {
               <span className="text-xs font-black text-slate-400 uppercase tracking-widest">الإجمالي النهائي</span>
               <div className="flex flex-col items-end">
                 <span className="text-3xl font-black text-indigo-600 dark:text-indigo-400 tracking-tighter">
-                  {total.toFixed(2)} <span className="text-xs text-slate-400 font-bold tracking-normal">{storeSettings.currency}</span>
+                  {pricesHidden ? '🔒' : total.toFixed(2)} <span className="text-xs text-slate-400 font-bold tracking-normal">{storeSettings.currency}</span>
                 </span>
-                {cart.length > 0 && (
+                {cart.length > 0 && !pricesHidden && (
                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-md mt-1 border ${
                     profit >= 0 
                       ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-100 dark:border-emerald-800' 
@@ -2123,8 +2194,8 @@ export default function POS() {
           <div className="flex gap-3">
             <button
               onClick={() => { setShouldPrint(false); setShowCheckoutModal(true); }}
-              disabled={cart.length === 0}
-              style={cart.length > 0 ? { background: storeSettings.themeColor } : {}}
+              disabled={cart.length === 0 || pricesHidden}
+              style={cart.length > 0 && !pricesHidden ? { background: storeSettings.themeColor } : {}}
               className="flex-1 disabled:bg-gray-300 text-white py-4 rounded-2xl font-black flex flex-col items-center justify-center gap-1 transition-all text-sm active:scale-95 shadow-lg disabled:shadow-none group"
             >
               <Banknote size={20} className="group-hover:scale-110 transition-transform" />
@@ -2132,8 +2203,8 @@ export default function POS() {
             </button>
             <button
               onClick={() => { setShouldPrint(true); setShowCheckoutModal(true); }}
-              disabled={cart.length === 0}
-              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-4 rounded-2xl font-black flex flex-col items-center justify-center gap-1 transition-all text-sm active:scale-95 shadow-lg shadow-emerald-500/20 disabled:shadow-none group"
+              disabled={cart.length === 0 || pricesHidden}
+              className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 disabled:from-gray-300 disabled:to-gray-300 text-white py-4 rounded-2xl font-black flex flex-col items-center justify-center gap-1 transition-all text-sm active:scale-95 shadow-lg shadow-emerald-500/20 disabled:shadow-none group"
             >
               <Printer size={20} className="group-hover:rotate-12 transition-transform" />
               <span>دفع وطباعة</span>

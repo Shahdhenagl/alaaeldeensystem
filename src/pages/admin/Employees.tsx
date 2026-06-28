@@ -15,13 +15,22 @@ export default function Employees() {
   } = useStore();
 
   // إجمالي مبيعات محاسب (المرتبط بموظف) في شهر معيّن (YYYY-MM).
-  const cashierMonthlySales = (emp: any, month: string) => {
-    if (!emp?.cashier_id) return 0;
-    const cashier = cashiers.find((c: any) => c.id === emp.cashier_id);
-    const cname = cashier?.name || emp.name;
-    return orders
-      .filter((o: any) => !o.is_deleted && o.type === 'sale' && o.cashier_name === cname && String(o.date || '').slice(0, 7) === month)
-      .reduce((s: number, o: any) => s + (Number(o.total) || 0), 0);
+  // مبيعات الموظف كبائع (salesperson) لهذا الشهر + الأرباح المحققة — لحساب العمولة.
+  // يشمل الفواتير اللي اتسجّل عليها كبائع، + (لو محاسب) فواتيره اللي ملهاش بائع محدد.
+  const employeeMonthStats = (emp: any, month: string) => {
+    const cashier = emp?.cashier_id ? cashiers.find((c: any) => c.id === emp.cashier_id) : null;
+    const cname = cashier?.name || emp?.name;
+    const rows = orders.filter((o: any) => !o.is_deleted && o.type === 'sale' && String(o.date || '').slice(0, 7) === month && (
+      (emp?.id && o.salesperson_id === emp.id) ||
+      (emp?.cashier_id && !o.salesperson_id && o.cashier_name === cname)
+    ));
+    const sales = rows.reduce((s: number, o: any) => s + (Number(o.total) || 0), 0);
+    const profit = rows.reduce((s: number, o: any) => s + (o.items || []).reduce((ps: number, it: any) => {
+      const qty = (Number(it.quantity) || 0) - (Number(it.returned_quantity) || 0);
+      const cost = Number(it.average_purchase_price ?? it.purchase_price) || 0;
+      return ps + ((Number(it.sale_price) || 0) - cost) * qty;
+    }, 0), 0);
+    return { sales, profit };
   };
 
   const [activeTab, setActiveTab] = useState<'employees' | 'transactions'>('employees');
@@ -1229,8 +1238,9 @@ export default function Employees() {
                 </div>
               </div>
 
-              {transType === 'salary' && selectedEmployee?.cashier_id && (() => {
-                const sales = cashierMonthlySales(selectedEmployee, transFormData.month);
+              {transType === 'salary' && (() => {
+                const stats = employeeMonthStats(selectedEmployee, transFormData.month);
+                const sales = stats.sales;
                 const rate = parseFloat(transFormData.commissionRate) || 0;
                 const commission = sales * rate / 100;
                 return (
@@ -1239,6 +1249,7 @@ export default function Employees() {
                       <span>عمولة المبيعات</span>
                       <span>مبيعات الشهر: {sales.toFixed(2)} {storeSettings.currency}</span>
                     </div>
+                    <div className="text-[11px] font-bold text-emerald-700 -mt-1">الأرباح المحققة للشركة من مبيعاته: {stats.profit.toFixed(2)} {storeSettings.currency}</div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <label className="text-xs font-bold text-slate-600">نسبة العمولة %</label>
                       <input type="number" min="0" step="0.1" className="w-20 bg-white border border-emerald-200 rounded-lg p-2 text-center font-bold" value={transFormData.commissionRate} onChange={e => setTransFormData({ ...transFormData, commissionRate: e.target.value })} />
