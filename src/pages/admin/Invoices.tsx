@@ -412,6 +412,21 @@ export default function Invoices() {
     return filteredOrders.filter(o => o.type !== 'payment' && (o.total - (o.paid_amount || 0)) > 0.009).length;
   }, [filteredOrders]);
 
+  // تقرير مبيعات/أرباح كل مسؤول مبيعات في الفترة المفلترة (كشف عمولة)
+  const salespersonReport = useMemo(() => {
+    const map = new Map<string, { name: string; count: number; sales: number; profit: number }>();
+    filteredOrders.forEach((o) => {
+      const name = (o as any).salesperson_name;
+      if (!name || o.type === 'payment' || o.is_deleted) return;
+      const cur = map.get(name) || { name, count: 0, sales: 0, profit: 0 };
+      cur.count += 1;
+      cur.sales += Number(o.total) || 0;
+      cur.profit += calculateInvoiceProfit(o);
+      map.set(name, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => b.sales - a.sales);
+  }, [filteredOrders]);
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-end mb-8">
@@ -592,6 +607,35 @@ export default function Invoices() {
               </button>
             </div>
         </div>
+
+        {salespersonReport.length > 0 && (
+          <div className="bg-white rounded-2xl border border-purple-100 shadow-sm mb-6 overflow-hidden">
+            <div className="px-5 py-3 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+              <User size={18} className="text-purple-600" />
+              <h3 className="font-black text-purple-800">كشف مبيعات وأرباح مسؤولي المبيعات (الفترة المعروضة)</h3>
+            </div>
+            <table className="w-full text-right text-sm">
+              <thead className="bg-slate-50 text-slate-400 font-bold">
+                <tr>
+                  <th className="p-3">مسؤول المبيعات</th>
+                  <th className="p-3 text-center">عدد الفواتير</th>
+                  <th className="p-3 text-center">إجمالي المبيعات</th>
+                  <th className="p-3 text-center text-emerald-600">إجمالي الأرباح</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {salespersonReport.map((r) => (
+                  <tr key={r.name} className="hover:bg-slate-50">
+                    <td className="p-3 font-black text-slate-800">{r.name}</td>
+                    <td className="p-3 text-center font-bold text-slate-600">{r.count}</td>
+                    <td className="p-3 text-center font-black text-indigo-600">{r.sales.toFixed(2)} {storeSettings.currency}</td>
+                    <td className="p-3 text-center font-black text-emerald-600">{r.profit.toFixed(2)} {storeSettings.currency}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="flex-1 overflow-x-auto">
           <table className="w-full text-right text-sm">
