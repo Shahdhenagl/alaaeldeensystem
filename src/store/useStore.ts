@@ -673,9 +673,9 @@ const getSplits = (split: any, method: string, amount: number) => {
 // ─── Store ───────────────────────────────────────────────────
 export const useStore = create<CashierStore>((set, get) => ({
   storeSettings: {
-    name: 'محل اللحوم الطازجة',
+    name: 'ADRIA',
     currency: 'ج.م',
-    logo: 'https://cdn-icons-png.flaticon.com/512/3143/3143641.png',
+    logo: '',
     taxRate: 0,
     themeColor: '#4f46e5',
     address: '',
