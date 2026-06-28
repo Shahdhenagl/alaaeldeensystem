@@ -44,28 +44,44 @@ export default function AdminLayout() {
     checkReminders();
   }, [maintenanceAppointments, carSubscriptions, hasCheckedReminders, updateMaintenanceReminded]);
 
-  const navItems = [
-    { name: 'نظرة عامة', path: '/admin/overview', icon: LayoutDashboard },
-    { name: 'التحليلات والتقارير', path: '/admin/analytics', icon: BarChart3 },
-    { name: 'المخزون والمنتجات', path: '/admin/inventory', icon: Package },
-    { name: 'الفواتير والمرتجعات', path: '/admin/invoices', icon: FileText },
-    { name: 'قاعدة العملاء', path: '/admin/customers', icon: Users },
-    { name: 'حملات واتساب', path: '/admin/whatsapp-campaigns', icon: MessageCircle },
-    { name: 'الموردين والمشتريات', path: '/admin/suppliers', icon: Users },
-    { name: 'حسابات الآجل', path: '/admin/deferred', icon: CreditCard },
-    { name: 'إدارة المحاسبين', path: '/admin/cashiers', icon: Users },
-    { name: 'الرواتب والموظفين', path: '/admin/employees', icon: Users },
-    { name: 'الخزينة والمصاريف', path: '/admin/finance', icon: Wallet },
-    { name: 'سلف وتمويل', path: '/admin/financing', icon: Building2 },
-    { name: 'الميزانية العامة', path: '/admin/budget', icon: PieChart },
-    { name: 'الفواتير الأوفلاين', path: '/admin/offline-invoices', icon: WifiOff },
-    { name: 'كوبونات الخصم', path: '/admin/coupons', icon: Ticket },
-    { name: 'تنبيهات النواقص', path: '/admin/stock-alerts', icon: BellRing },
-    { name: 'إعدادات النظام', path: '/admin/settings', icon: Settings },
-    { name: 'التصنيع', path: '/admin/manufacturing', icon: Scissors },
-    { name: 'المدراء والسحوبات', path: '/admin/managers', icon: Briefcase },
-    { name: 'الشركاء', path: '/admin/partners', icon: Handshake },
-    { name: 'خزنة الادخار', path: '/admin/savings', icon: PiggyBank },
+  const navGroups = [
+    { section: 'عام', items: [
+      { name: 'نظرة عامة', path: '/admin/overview', icon: LayoutDashboard },
+      { name: 'التحليلات والتقارير', path: '/admin/analytics', icon: BarChart3 },
+    ]},
+    { section: 'المبيعات والفواتير', items: [
+      { name: 'الفواتير والمرتجعات', path: '/admin/invoices', icon: FileText },
+      { name: 'الفواتير الأوفلاين', path: '/admin/offline-invoices', icon: WifiOff },
+      { name: 'كوبونات الخصم', path: '/admin/coupons', icon: Ticket },
+    ]},
+    { section: 'المخزون والتصنيع', items: [
+      { name: 'المخزون والمنتجات', path: '/admin/inventory', icon: Package },
+      { name: 'التصنيع', path: '/admin/manufacturing', icon: Scissors },
+      { name: 'تنبيهات النواقص', path: '/admin/stock-alerts', icon: BellRing },
+    ]},
+    { section: 'العملاء', items: [
+      { name: 'قاعدة العملاء', path: '/admin/customers', icon: Users },
+      { name: 'حسابات الآجل', path: '/admin/deferred', icon: CreditCard },
+      { name: 'حملات واتساب', path: '/admin/whatsapp-campaigns', icon: MessageCircle },
+    ]},
+    { section: 'الموردين', items: [
+      { name: 'الموردين والمشتريات', path: '/admin/suppliers', icon: Users },
+    ]},
+    { section: 'المالية والخزائن', items: [
+      { name: 'الخزينة والمصاريف', path: '/admin/finance', icon: Wallet },
+      { name: 'خزنة الادخار', path: '/admin/savings', icon: PiggyBank },
+      { name: 'الميزانية العامة', path: '/admin/budget', icon: PieChart },
+      { name: 'سلف وتمويل', path: '/admin/financing', icon: Building2 },
+      { name: 'المدراء والسحوبات', path: '/admin/managers', icon: Briefcase },
+      { name: 'الشركاء', path: '/admin/partners', icon: Handshake },
+    ]},
+    { section: 'الموظفين', items: [
+      { name: 'إدارة المحاسبين', path: '/admin/cashiers', icon: Users },
+      { name: 'الرواتب والموظفين', path: '/admin/employees', icon: Users },
+    ]},
+    { section: 'الإعدادات', items: [
+      { name: 'إعدادات النظام', path: '/admin/settings', icon: Settings },
+    ]},
   ];
 
   const handleLogout = () => {
@@ -87,23 +103,30 @@ export default function AdminLayout() {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              style={({ isActive }) => isActive ? { background: storeSettings.themeColor } : {}}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-2.5 rounded-xl transition ${
-                  isActive
-                    ? 'text-white font-bold shadow-lg'
-                    : 'hover:bg-slate-800 hover:text-white'
-                }`
-              }
-            >
-              <item.icon size={20} />
-              {item.name}
-            </NavLink>
+        <nav className="flex-1 px-4 pb-4 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.section} className="mb-3">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider px-4 mb-1.5">{group.section}</p>
+              <div className="space-y-1">
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    style={({ isActive }) => isActive ? { background: storeSettings.themeColor } : {}}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-2.5 rounded-xl transition text-sm ${
+                        isActive
+                          ? 'text-white font-bold shadow-lg'
+                          : 'hover:bg-slate-800 hover:text-white'
+                      }`
+                    }
+                  >
+                    <item.icon size={18} />
+                    {item.name}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
