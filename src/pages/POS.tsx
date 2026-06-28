@@ -718,23 +718,20 @@ export default function POS() {
     const invoiceUrl = `${window.location.origin}/view-invoice/${invId}`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(invoiceUrl)}`;
 
+    const debtLine = (orderDetails.totalDebt || 0) > 0.5
+      ? `<div class="info-item" style="border-top:1px dashed #000;padding-top:3px;margin-top:2px;"><strong>إجمالي المديونية الحالية:</strong> <span style="color:#000;font-weight:900;font-size:14px;">${(orderDetails.totalDebt || 0).toFixed(2)} ${currentSettings.currency}</span></div>`
+      : '';
     const customerBlock = (orderDetails.customerName || orderDetails.customerPhone || orderDetails.customId)
       ? `<div class="customer-info-grid">
             <div class="info-item"><strong>اسم العميل:</strong> <span>${escapeHtml(orderDetails.customerName || '—')}</span></div>
             <div class="info-item"><strong>رقم الهاتف:</strong> <span dir="ltr">${escapeHtml(orderDetails.customerPhone || '—')}</span></div>
-            <div class="info-item"><strong>رقم الكارت (ID):</strong> <span dir="ltr">${escapeHtml(orderDetails.customId || orderDetails.customerId?.substring(0, 8) || '—')}</span></div>
             <div class="info-item"><strong>رقم الفاتورة:</strong> <span>#${invId}</span></div>
-            <div class="info-item"><strong>المسؤول:</strong> <span>${escapeHtml(activeCashier?.name || '—')}</span></div>
             <div class="info-item"><strong>التاريخ:</strong> <span>${printDate}</span></div>
-            <div class="info-item" style="grid-column: span 2; border-top: 1px dashed #e2e8f0; padding-top: 4px; margin-top: 2px;">
-              <strong>إجمالي المديونية الحالية:</strong> 
-              <span style="color: #dc2626; font-size: 14px;">${(orderDetails.totalDebt || 0).toFixed(2)} ${currentSettings.currency}</span>
-            </div>
+            ${debtLine}
          </div>`
       : `<div class="customer-info-grid">
             <div class="info-item"><strong>اسم العميل:</strong> <span>عميل نقدي</span></div>
             <div class="info-item"><strong>رقم الفاتورة:</strong> <span>#${invId}</span></div>
-            <div class="info-item"><strong>المسؤول:</strong> <span>${escapeHtml(activeCashier?.name || '—')}</span></div>
             <div class="info-item"><strong>التاريخ:</strong> <span>${printDate}</span></div>
          </div>`;
 
@@ -749,35 +746,36 @@ export default function POS() {
   body{background:#fff;color:#000;margin:0;}
   .invoice-container{width:72mm;margin:0 auto;padding:2mm 1.5mm;display:flex;flex-direction:column;}
 
-  .header-main{text-align:center;border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;}
-  .logo{max-height:55px;max-width:55mm;width:auto;object-fit:contain;display:block;margin:0 auto 4px;}
-  .store-name{font-size:19px;font-weight:900;color:#000;line-height:1.2;}
-  .store-details{font-size:11px;color:#000;margin-top:2px;line-height:1.45;font-weight:bold;}
+  .header-main{text-align:center;border-bottom:1px dashed #000;padding-bottom:4px;margin-bottom:4px;}
+  .logo{max-height:48px;max-width:50mm;width:auto;object-fit:contain;display:block;margin:0 auto 2px;}
+  .store-name{font-size:18px;font-weight:900;color:#000;line-height:1.1;}
+  .store-details{font-size:10px;color:#000;margin-top:1px;line-height:1.3;font-weight:bold;}
 
-  .customer-info-grid{display:flex;flex-direction:column;gap:3px;margin-bottom:6px;font-size:12px;}
-  .info-item{display:flex;justify-content:space-between;gap:6px;}
+  .customer-info-grid{display:flex;flex-direction:column;gap:1px;margin-bottom:4px;font-size:11px;}
+  .info-item{display:flex;justify-content:space-between;gap:6px;padding:1px 0;}
   .info-item strong{color:#000;white-space:nowrap;}
   .info-item span{color:#000;font-weight:700;}
 
-  table{width:100%;border-collapse:collapse;margin-bottom:5px;}
-  thead th{font-size:12px;padding:5px 1px;border-bottom:1.5px solid #000;font-weight:900;}
+  table{width:100%;border-collapse:collapse;margin-bottom:3px;}
+  thead th{font-size:11px;padding:3px 1px;border-bottom:1.5px solid #000;font-weight:900;white-space:nowrap;}
   thead th:nth-child(2){text-align:right;}
   thead th:last-child{text-align:left;}
-  tbody td{font-size:12px;padding:4px 1px;border-bottom:1px dotted #999;vertical-align:top;font-weight:600;}
+  tbody td{font-size:12px;padding:3px 1px;border-bottom:1px dotted #999;vertical-align:middle;font-weight:700;}
+  tbody td:nth-child(1),tbody td:nth-child(3),tbody td:nth-child(4),tbody td:nth-child(5){white-space:nowrap;}
 
-  .summary-section{width:100%;margin-top:4px;}
-  .summary-row{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;font-weight:700;}
-  .summary-row.total{border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:3px;padding:5px 0;font-size:18px;font-weight:900;color:#000;}
+  .summary-section{width:100%;margin-top:3px;}
+  .summary-row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px;font-weight:700;}
+  .summary-row.total{border-top:1.5px solid #000;border-bottom:1.5px solid #000;margin-top:2px;padding:4px 0;font-size:18px;font-weight:900;color:#000;}
 
-  .payment-status{margin-top:6px;padding:6px;border-radius:5px;text-align:center;font-weight:900;font-size:13px;}
-  .status-paid{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7;}
-  .status-debt{background:#ffebee;color:#b71c1c;border:1px solid #ef9a9a;}
+  .payment-status{margin-top:5px;padding:5px;border:1.5px solid #000;border-radius:4px;text-align:center;font-weight:900;font-size:13px;color:#000;}
+  .status-paid{background:#fff;color:#000;}
+  .status-debt{background:#fff;color:#000;}
 
-  .qr-code-container{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:8px;}
-  .qr-code-img{width:90px;height:90px;}
+  .qr-code-container{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:6px;}
+  .qr-code-img{width:80px;height:80px;}
   .qr-label{font-size:10px;font-weight:900;color:#000;}
 
-  .footer{text-align:center;margin-top:8px;padding-top:6px;border-top:1px dashed #000;font-size:11px;color:#000;font-weight:bold;}
+  .footer{text-align:center;margin-top:6px;padding-top:4px;border-top:1px dashed #000;font-size:10px;color:#000;font-weight:bold;}
 
   @media print{
     @page{size:72mm auto;margin:0;}
@@ -814,9 +812,9 @@ export default function POS() {
 
   <div class="summary-section">
     <div class="summary-row"><span>المجموع الفرعي:</span><span>${orderDetails.subtotal.toFixed(2)} ${currentSettings.currency}</span></div>
-    ${orderDetails.couponCode ? `<div class="summary-row" style="color:#e53e3e;font-weight:700;"><span>كوبون (${escapeHtml(orderDetails.couponCode)}):</span><span>- ${(orderDetails.couponDiscountAmount || 0).toFixed(2)} ${currentSettings.currency}</span></div>` : ''}
-    ${(orderDetails.discount - (orderDetails.couponDiscountAmount || 0)) > 0.5 ? `<div class="summary-row" style="color:#e53e3e;font-weight:700;"><span>خصم الفاتورة:</span><span>- ${(orderDetails.discount - (orderDetails.couponDiscountAmount || 0)).toFixed(2)} ${currentSettings.currency}</span></div>` : ''}
-    <div class="summary-row"><span>الضريبة (${currentSettings.taxRate}%):</span><span>${orderDetails.tax.toFixed(2)} ${currentSettings.currency}</span></div>
+    ${orderDetails.couponCode ? `<div class="summary-row" style="color:#000;font-weight:900;"><span>كوبون (${escapeHtml(orderDetails.couponCode)}):</span><span>- ${(orderDetails.couponDiscountAmount || 0).toFixed(2)} ${currentSettings.currency}</span></div>` : ''}
+    ${(orderDetails.discount - (orderDetails.couponDiscountAmount || 0)) > 0.5 ? `<div class="summary-row" style="color:#000;font-weight:900;"><span>خصم الفاتورة:</span><span>- ${(orderDetails.discount - (orderDetails.couponDiscountAmount || 0)).toFixed(2)} ${currentSettings.currency}</span></div>` : ''}
+    ${(Number(currentSettings.taxRate) > 0) ? `<div class="summary-row"><span>الضريبة (${currentSettings.taxRate}%):</span><span>${orderDetails.tax.toFixed(2)} ${currentSettings.currency}</span></div>` : ''}
     <div class="summary-row total"><span>الإجمالي النهائي:</span><span>${orderDetails.total.toFixed(2)} ${currentSettings.currency}</span></div>
   
     ${(orderDetails.paidAmount !== undefined && orderDetails.paidAmount < orderDetails.total) ? `
