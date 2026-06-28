@@ -65,6 +65,74 @@ export default function POS() {
   const focusById = (id: string) => { setTimeout(() => { const el = document.getElementById(id) as HTMLElement | null; el?.focus(); }, 0); };
   const keyNext = (e: React.KeyboardEvent, nextId: string) => { if (e.key === 'Enter') { e.preventDefault(); focusById(nextId); } };
 
+  // ── سداد آجل للعملاء من الكاشير ──────────────────────────────
+  const [showDebtModal, setShowDebtModal] = useState(false);
+  const [debtSearch, setDebtSearch] = useState('');
+  const [debtCustId, setDebtCustId] = useState('');
+  const [debtAmount, setDebtAmount] = useState('');
+  const [debtMethod, setDebtMethod] = useState('cash');
+  const [debtSaving, setDebtSaving] = useState(false);
+  const customerDebtOf = (custId: string) => {
+    return orders.filter(o => o.customer?.id === custId && !o.is_deleted).reduce((sum, o) => {
+      const debt = (o.type === 'payment' ? 0 : (o.total || 0)) - (o.paid_amount || 0);
+      if (debt > 0.009 && o.type !== 'payment') return sum + debt;
+      if (o.type === 'payment' && !(o.notes && o.notes.includes('سداد أجل للفاتورة رقم'))) return sum + debt;
+      return sum;
+    }, 0);
+  };
+  const debtCustomers = customers.map(c => ({ ...c, debt: customerDebtOf(c.id) })).filter(c => c.debt > 0.5);
+  const debtFiltered = debtCustomers.filter(c => {
+    const q = debtSearch.trim().toLowerCase();
+    return !q || c.name.toLowerCase().includes(q) || (c.phone || '').includes(q);
+  });
+  const selectedDebtCustomer = debtCustomers.find(c => c.id === debtCustId);
+
+  const printDebtReceipt = (custName: string, paid: number, remaining: number, methodLabel: string, invId: string) => {
+    const s = storeSettings;
+    const date = new Date().toLocaleString('ar-EG', { calendar: 'gregory', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"/><title>إيصال سداد #${invId}</title><style>
+      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;900&display=swap');
+      *{margin:0;padding:0;box-sizing:border-box;font-family:'Cairo',sans-serif;color:#000;}
+      .c{width:72mm;margin:0 auto;padding:2mm 1.5mm;}
+      .nm{font-size:18px;font-weight:900;text-align:center;}
+      .ttl{font-size:14px;font-weight:900;text-align:center;border:1.5px solid #000;border-radius:5px;padding:3px;margin:5px 0;}
+      .r{display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:2px 0;}
+      .big{font-size:17px;font-weight:900;border-top:1.5px solid #000;border-bottom:1.5px solid #000;padding:5px 0;margin-top:4px;}
+      .rem{font-size:15px;font-weight:900;text-align:center;border:1.5px solid #000;border-radius:5px;padding:4px;margin-top:5px;}
+      .ft{text-align:center;font-size:10px;font-weight:700;margin-top:6px;border-top:1px dashed #000;padding-top:4px;}
+      @media print{@page{size:72mm auto;margin:0;}.c{width:72mm;}}
+    </style></head><body><div class="c">
+      <div class="nm">${escapeHtml(s.name)}</div>
+      <div class="ttl">إيصال سداد آجل</div>
+      <div class="r"><span>رقم الإيصال:</span><span>#${invId}</span></div>
+      <div class="r"><span>التاريخ:</span><span>${date}</span></div>
+      <div class="r"><span>المحاسب:</span><span>${escapeHtml(activeCashier?.name || 'مدير النظام')}</span></div>
+      <div class="r"><span>العميل:</span><span>${escapeHtml(custName)}</span></div>
+      <div class="r"><span>طريقة الدفع:</span><span>${methodLabel}</span></div>
+      <div class="r big"><span>المبلغ المدفوع:</span><span>${paid.toFixed(2)} ${s.currency}</span></div>
+      <div class="rem">المتبقي عليه: ${remaining.toFixed(2)} ${s.currency}</div>
+      <div class="ft">شكراً لتعاملكم معنا</div>
+    </div><script>window.onload=()=>{setTimeout(()=>{window.print();},400);}</script></body></html>`;
+    openPrintWindow(html);
+  };
+
+  const submitDebtPayment = async () => {
+    const c = selectedDebtCustomer;
+    if (!c) { alert('اختر العميل'); return; }
+    const amount = Number(debtAmount) || 0;
+    if (amount <= 0) { alert('أدخل المبلغ المدفوع'); return; }
+    if (amount > c.debt + 0.01) { alert(`المبلغ أكبر من المديونية (${c.debt.toFixed(2)})`); return; }
+    setDebtSaving(true);
+    try {
+      const split = { cash: debtMethod === 'cash' ? amount : 0, visa: debtMethod === 'visa' ? amount : 0, wallet: debtMethod === 'wallet' ? amount : 0, instapay: debtMethod === 'instapay' ? amount : 0 };
+      const invId = await checkout(0, { name: c.name, phone: c.phone, custom_id: c.custom_id }, amount, 'payment', debtMethod as any, split);
+      const methodLabel = debtMethod === 'cash' ? 'كاش' : debtMethod === 'visa' ? 'فيزا' : debtMethod === 'wallet' ? 'محفظة' : 'انستا باي';
+      printDebtReceipt(c.name, amount, Math.max(0, c.debt - amount), methodLabel, String(invId || ''));
+      setShowDebtModal(false); setDebtCustId(''); setDebtAmount(''); setDebtSearch('');
+    } catch (e: any) { alert('خطأ في تسجيل السداد: ' + (e?.message || e)); }
+    setDebtSaving(false);
+  };
+
   const deleteOrderWithOtp = async (o: any) => {
     const reason = prompt('سبب حذف الفاتورة؟', 'حذف من الكاشير');
     if (reason === null) return;
@@ -1630,6 +1698,61 @@ export default function POS() {
         <EditInvoiceModal invoice={editingOrder} onClose={() => setEditingOrder(null)} requireOtp />
       )}
 
+      {showDebtModal && (
+        <div className="fixed inset-0 bg-black/50 z-[150] flex items-center justify-center p-3" onClick={() => setShowDebtModal(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-amber-500 text-white px-5 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-black flex items-center gap-2"><CreditCard size={20} /> سداد آجل للعملاء</h2>
+              <button onClick={() => setShowDebtModal(false)} className="hover:bg-white/20 p-1.5 rounded-lg"><X size={22} /></button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto space-y-3">
+              {!selectedDebtCustomer ? (
+                <>
+                  <input autoFocus value={debtSearch} onChange={(e) => setDebtSearch(e.target.value)} placeholder="ابحث باسم العميل أو رقم التليفون..." className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-amber-500" />
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    {debtFiltered.length === 0 ? <p className="text-center text-slate-400 py-8 font-bold">لا يوجد عملاء عليهم آجل</p>
+                      : debtFiltered.map((c) => (
+                        <button key={c.id} onClick={() => { setDebtCustId(c.id); setDebtAmount(String(c.debt.toFixed(2))); }} className="w-full text-right bg-slate-50 dark:bg-slate-900/40 hover:bg-amber-50 rounded-xl p-3 border border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                          <div><p className="font-black text-slate-800 dark:text-slate-100 text-sm">{c.name}</p><p className="text-[11px] text-slate-500" dir="ltr">{c.phone || '—'}</p></div>
+                          <span className="bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-lg">{c.debt.toFixed(2)} {storeSettings.currency}</span>
+                        </button>
+                      ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-slate-50 dark:bg-slate-900/40 rounded-xl p-3 flex items-center justify-between">
+                    <div><p className="font-black text-slate-800 dark:text-slate-100">{selectedDebtCustomer.name}</p><p className="text-[11px] text-slate-500" dir="ltr">{selectedDebtCustomer.phone || '—'}</p></div>
+                    <button onClick={() => { setDebtCustId(''); setDebtAmount(''); }} className="text-xs font-bold text-amber-600">تغيير</button>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 text-center">
+                    <div className="text-[11px] font-bold text-red-600">إجمالي المديونية</div>
+                    <div className="text-2xl font-black text-red-700">{selectedDebtCustomer.debt.toFixed(2)} {storeSettings.currency}</div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">المبلغ المدفوع</label>
+                    <input autoFocus type="number" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-3 px-3 text-lg font-black outline-none focus:ring-2 focus:ring-amber-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 block mb-1">طريقة الدفع</label>
+                    <select value={debtMethod} onChange={(e) => setDebtMethod(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 px-3 text-sm font-bold outline-none">
+                      <option value="cash">كاش</option><option value="visa">فيزا</option><option value="wallet">محفظة</option><option value="instapay">انستا باي</option>
+                    </select>
+                  </div>
+                  <div className="bg-slate-100 dark:bg-slate-900 rounded-xl p-3 text-center">
+                    <span className="text-xs font-bold text-slate-500">المتبقي بعد السداد: </span>
+                    <span className="font-black text-slate-800 dark:text-slate-100">{Math.max(0, selectedDebtCustomer.debt - (Number(debtAmount) || 0)).toFixed(2)} {storeSettings.currency}</span>
+                  </div>
+                  <button onClick={submitDebtPayment} disabled={debtSaving} className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-black py-3 rounded-xl flex items-center justify-center gap-2">
+                    <Printer size={18} /> {debtSaving ? 'جاري...' : 'تأكيد السداد وطباعة الإيصال'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showReturnsModal && (
         <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-start md:items-center justify-center p-4 pt-8 md:pt-4 pb-20 md:pb-4">
           <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-gray-200 dark:border-slate-700">
@@ -1940,6 +2063,9 @@ export default function POS() {
             {/* Left: Invoices history + Returns Button */}
             <button onClick={() => setShowHistory(true)} className="flex items-center justify-center gap-1.5 lg:gap-2 px-3 lg:px-5 h-[44px] lg:h-[52px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 rounded-2xl font-bold transition border border-indigo-100 dark:border-indigo-900/30 whitespace-nowrap shadow-sm shrink-0">
               <FileText size={18} /> <span className="text-sm">الفواتير</span>
+            </button>
+            <button onClick={() => setShowDebtModal(true)} className="flex items-center justify-center gap-1.5 lg:gap-2 px-3 lg:px-5 h-[44px] lg:h-[52px] bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 rounded-2xl font-bold transition border border-amber-100 dark:border-amber-900/30 whitespace-nowrap shadow-sm shrink-0">
+              <CreditCard size={18} /> <span className="text-sm">سداد آجل</span>
             </button>
             <button onClick={() => setShowDayBudget(true)} className="flex items-center justify-center gap-1.5 lg:gap-2 px-3 lg:px-5 h-[44px] lg:h-[52px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 rounded-2xl font-bold transition border border-emerald-100 dark:border-emerald-900/30 whitespace-nowrap shadow-sm shrink-0">
               <Banknote size={18} /> <span className="text-sm">تقفيل اليوم</span>
