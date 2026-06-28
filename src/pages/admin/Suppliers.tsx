@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import type { PurchaseItem, Product } from '../../store/useStore';
-import { Users, Search, Plus, Edit2, Trash2, Phone, MapPin, Calendar, ShoppingCart, FileText, X, ChevronDown, Printer, Eye } from 'lucide-react';
+import { Users, Search, Plus, Edit2, Trash2, Phone, MapPin, Calendar, ShoppingCart, FileText, X, ChevronDown, Printer, Eye, Download } from 'lucide-react';
 import { normalizeArabic } from '../../utils/textUtils';
 import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { openPrintWindow } from '../../utils/printWindow';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 function ProductSearchSelect({ 
   value, 
@@ -903,6 +905,28 @@ export default function Suppliers() {
           }
         };
 
+        const exportSupplierPDF = async () => {
+          const el = document.getElementById('supplier-profile-pdf');
+          if (!el) return;
+          const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#f8fafc', windowWidth: el.scrollWidth, height: el.scrollHeight, windowHeight: el.scrollHeight });
+          const imgData = canvas.toDataURL('image/png');
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const pageW = pdf.internal.pageSize.getWidth();
+          const pageH = pdf.internal.pageSize.getHeight();
+          const imgH = (canvas.height * pageW) / canvas.width;
+          let heightLeft = imgH;
+          let position = 0;
+          pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH);
+          heightLeft -= pageH;
+          while (heightLeft > 0) {
+            position -= pageH;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, pageW, imgH);
+            heightLeft -= pageH;
+          }
+          pdf.save(`مورد_${selectedSupplierProfile.name}_${new Date().toLocaleDateString('en-CA')}.pdf`);
+        };
+
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
@@ -916,10 +940,13 @@ export default function Suppliers() {
                     <p className="text-slate-500 font-bold mt-1 flex items-center gap-2"><Phone size={14} /> {selectedSupplierProfile.phone}</p>
                   </div>
                 </div>
-                <button onClick={() => setShowSupplierProfile(false)} className="p-2 rounded-2xl hover:bg-slate-100 transition"><X size={24} /></button>
+                <div className="flex items-center gap-2">
+                  <button onClick={exportSupplierPDF} style={{ backgroundColor: tc }} className="text-white px-4 py-2.5 rounded-2xl font-bold text-sm flex items-center gap-2 hover:opacity-90 transition"><Download size={16} /> تصدير PDF</button>
+                  <button onClick={() => setShowSupplierProfile(false)} className="p-2 rounded-2xl hover:bg-slate-100 transition"><X size={24} /></button>
+                </div>
               </div>
 
-              <div className="p-8 bg-slate-50 flex-1 overflow-y-auto">
+              <div id="supplier-profile-pdf" className="p-8 bg-slate-50 flex-1 overflow-y-auto">
                 {/* Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
