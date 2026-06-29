@@ -1595,7 +1595,7 @@ export default function POS() {
                   <div>
                     <div className="text-xs font-bold text-slate-500 mb-2">الرصيد الحالي الفعلي في الخزنة (بالتقسيمة):</div>
                     <div className="grid grid-cols-2 gap-3">
-                      {([['cash', 'كاش'], ['visa', 'فيزا'], ['instapay', 'انستا باي'], ['wallet', 'محفظة']] as const).map(([k, label]) => {
+                      {([['cash', 'كاش'], ['visa', 'فيزا'], ['instapay', 'انستا باي'], ['wallet', 'محفظة']] as const).map(([k]) => {
                         const bal = (dayBudget.shopAvail?.[k]) ?? (dayBudget.dayIn[k] - dayBudget.dayOut[k]);
                         const net = dayBudget.dayIn[k] - dayBudget.dayOut[k];
                         return (
@@ -1623,7 +1623,7 @@ export default function POS() {
                         </div>
                         <p className="text-[11px] text-slate-500">المبالغ مملوءة بكامل الموجود في خزنة المحل — عدّليها لو عايزة مبلغ محدد (مش أكبر من المتاح). كل طريقة بتتحوّل بنفسها.</p>
                         <div className="grid grid-cols-2 gap-2">
-                          {PAY_KEYS.map(([k, label]) => (
+                          {PAY_KEYS.map(([k]) => (
                             <div key={k}>
                               <label className="text-[11px] font-bold text-slate-500">{payLabel(k)} <span className="text-slate-400">(متاح {((dayBudget.shopAvail?.[k]) || 0).toFixed(0)})</span></label>
                               <input className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-bold" type="number" min="0" value={saveXfer[k]} onChange={(e) => { setSaveXfer((s) => ({ ...s, [k]: e.target.value })); setSaveXferSent(false); }} />
