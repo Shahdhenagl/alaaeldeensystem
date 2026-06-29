@@ -291,6 +291,32 @@ export default function Settings() {
               );
             })}
           </div>
+
+          {/* طرق دفع إضافية (5 و6) — لكل منها حساب مستقل في الخزنة */}
+          <h3 className="text-sm font-black text-slate-700 mt-6 mb-1">طرق دفع إضافية</h3>
+          <p className="text-slate-500 text-xs mb-3">فعّل طريقة خامسة/سادسة (مثلاً محفظة تانية أو حساب بنكي) — كل واحدة بتفتح حساب مستقل في الخزنة زي المحفظة.</p>
+          <div className="space-y-3">
+            {([['method5', 'طريقة دفع 5'], ['method6', 'طريقة دفع 6']] as const).map(([k, def]) => {
+              const labels = formData.paymentLabels || {};
+              const enabled = formData.paymentMethodsEnabled || {};
+              const on = !!enabled[k];
+              return (
+                <div key={k} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${on ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <label className="flex items-center gap-2 cursor-pointer shrink-0">
+                    <input type="checkbox" checked={on} onChange={(e) => setFormData({ ...formData, paymentMethodsEnabled: { ...enabled, [k]: e.target.checked } })} className="w-5 h-5 accent-indigo-600" />
+                    <span className="text-xs font-bold text-slate-600">تفعيل</span>
+                  </label>
+                  <input
+                    value={labels[k] ?? ''}
+                    placeholder={def}
+                    disabled={!on}
+                    onChange={(e) => setFormData({ ...formData, paymentLabels: { ...labels, [k]: e.target.value } })}
+                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                  />
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* ── الطباعة المباشرة (QZ Tray) ── */}

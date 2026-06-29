@@ -6,6 +6,7 @@ import { ShoppingCart, Search, Plus, Minus, Trash2, Banknote, RefreshCcw, Moon, 
 import { Html5Qrcode } from 'html5-qrcode';
 import { normalizeArabic } from '../utils/textUtils';
 import { printBarcodeLabels, generateBarcode } from '../utils/printBarcodeLabels';
+import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../utils/paymentMethods';
 import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 import { escapeHtml } from '../utils/escapeHtml';
 import { printDocument } from '../utils/printWindow';
@@ -169,8 +170,9 @@ export default function POS() {
   const isMaster = activeCashier?.id === 'master';
   const perm = (k: string) => isMaster || ((storeSettings as any).cashierPermissions?.[k] !== false);
   // تسميات وسائل الدفع
-  const PAY_DEFAULTS: Record<string, string> = { cash: 'كاش', visa: 'فيزا', wallet: 'محفظة', instapay: 'انستا باي' };
-  const payLabel = (m: string) => ((storeSettings as any).paymentLabels?.[m] || PAY_DEFAULTS[m] || m);
+  const payLabel = (m: string) => payLabelOf(storeSettings as any, m);
+  // طرق الدفع المفعّلة (الأساسية + أي إضافية مفعّلة من الإعدادات)
+  const activePayKeys = activePaymentKeys(storeSettings as any);
   useEffect(() => { setWholesaleUnlocked(false); setOtpInput(''); setOtpSent(false); }, [invoiceType]);
 
   const requestOtp = async () => {
@@ -397,12 +399,13 @@ export default function POS() {
         supabase.from('purchase_invoices').select('*'),
         supabase.from('employee_transactions').select('*'),
       ]);
-      const methods = ['cash', 'visa', 'wallet', 'instapay'];
-      const zero = (): Record<string, number> => ({ cash: 0, visa: 0, wallet: 0, instapay: 0 });
+      const methods = [...ALL_PAYMENT_KEYS] as string[];
+      const zero = (): Record<string, number> => Object.fromEntries(methods.map((m) => [m, 0]));
       const dayIn = zero(), dayOut = zero(), befIn = zero(), befOut = zero();
       const addM = (t: Record<string, number>, rec: any, field: string, mOverride?: string) => {
-        const c = +rec.paid_cash || 0, v = +rec.paid_visa || 0, w = +rec.paid_wallet || 0, i = +rec.paid_instapay || 0;
-        if (c + v + w + i > 0) { t.cash += c; t.visa += v; t.wallet += w; t.instapay += i; return; }
+        const splits = methods.map((m) => +rec[`paid_${m}`] || 0);
+        const splitsSum = splits.reduce((a, b) => a + b, 0);
+        if (splitsSum > 0) { methods.forEach((m, idx) => { t[m] += splits[idx]; }); return; }
         const amt = Math.abs(+rec[field] || 0);
         const m = mOverride || rec.payment_method || 'cash';
         if (methods.includes(m)) t[m] += amt; else t.cash += amt;
@@ -424,11 +427,11 @@ export default function POS() {
       // المصروفات: لو المبلغ سالب فهو إيراد مسجّل يدوياً (داخل) مش خارج.
       const expensesArr = (expRes.data as any[]) || [];
       const realExpenses = expensesArr.filter((e) => (Number(e.amount) || 0) >= 0);
-      const manualIncomes = expensesArr.filter((e) => (Number(e.amount) || 0) < 0).map((e) => ({
-        ...e, amount: Math.abs(+e.amount || 0),
-        paid_cash: Math.abs(+e.paid_cash || 0), paid_visa: Math.abs(+e.paid_visa || 0),
-        paid_wallet: Math.abs(+e.paid_wallet || 0), paid_instapay: Math.abs(+e.paid_instapay || 0),
-      }));
+      const manualIncomes = expensesArr.filter((e) => (Number(e.amount) || 0) < 0).map((e) => {
+        const abs: any = { ...e, amount: Math.abs(+e.amount || 0) };
+        methods.forEach((m) => { abs[`paid_${m}`] = Math.abs(+e[`paid_${m}`] || 0); });
+        return abs;
+      });
       manualIncomes.forEach((r: any) => {
         const d = new Date(r.created_at);
         if (d >= start && d < end) addM(dayIn, r, 'amount');
@@ -437,12 +440,12 @@ export default function POS() {
       addOut(realExpenses, 'amount');
       addOut(purRes.data as any[], 'paid_amount');
       addOut(salRes.data as any[], 'amount');
-      const sum = (o: Record<string, number>) => o.cash + o.visa + o.wallet + o.instapay;
+      const sum = (o: Record<string, number>) => methods.reduce((s, m) => s + (o[m] || 0), 0);
       const opening = (Number((storeSettings as any).initialBalance ?? (storeSettings as any).initial_balance) || 0) + sum(befIn) - sum(befOut);
       const totalIn = sum(dayIn), totalOut = sum(dayOut);
       // الرصيد الحالي في خزنة المحل لكل وسيلة (كل الفترات) — للتحويل لخزنة الادخار.
-      const shopAvail: Record<string, number> = { cash: 0, visa: 0, wallet: 0, instapay: 0 };
-      (['cash', 'visa', 'wallet', 'instapay'] as const).forEach((m) => { shopAvail[m] = (befIn[m] + dayIn[m]) - (befOut[m] + dayOut[m]); });
+      const shopAvail: Record<string, number> = zero();
+      methods.forEach((m) => { shopAvail[m] = (befIn[m] + dayIn[m]) - (befOut[m] + dayOut[m]); });
       shopAvail.cash += Number((storeSettings as any).initialBalance ?? (storeSettings as any).initial_balance) || 0;
       setDayBudget({ opening, closing: opening + totalIn - totalOut, totalIn, totalOut, dayIn, dayOut, shopAvail });
     } catch (e) { console.error(e); alert('تعذّر تحميل ميزانية اليوم'); }
@@ -1867,7 +1870,7 @@ export default function POS() {
                   <div>
                     <div className="text-xs font-bold text-slate-500 mb-2">الرصيد الحالي الفعلي في الخزنة (بالتقسيمة):</div>
                     <div className="grid grid-cols-2 gap-3">
-                      {([['cash', 'كاش'], ['visa', 'فيزا'], ['instapay', 'انستا باي'], ['wallet', 'محفظة']] as const).map(([k]) => {
+                      {activePayKeys.map((k) => {
                         const bal = (dayBudget.shopAvail?.[k]) ?? (dayBudget.dayIn[k] - dayBudget.dayOut[k]);
                         const net = dayBudget.dayIn[k] - dayBudget.dayOut[k];
                         return (

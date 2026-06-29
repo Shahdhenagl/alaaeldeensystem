@@ -7,7 +7,8 @@ import {
   Calendar, FileText, Banknote, CreditCard, Smartphone, Zap
 } from 'lucide-react';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
+import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf, type PaymentKey } from '../../utils/paymentMethods';
 
 interface UnifiedTransaction {
   id: string;
@@ -16,7 +17,7 @@ interface UnifiedTransaction {
   category: string;
   description: string;
   amount: number;
-  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay';
+  payment_method: PaymentKey;
   date: Date;
   car_id?: string;
 }
@@ -36,7 +37,8 @@ export default function Budget() {
   const [customDate, setCustomDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [customMonth, setCustomMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [customYear, setCustomYear] = useState<string>(new Date().getFullYear().toString());
-  const [methodFilter, setMethodFilter] = useState<'all' | 'cash' | 'visa' | 'wallet' | 'instapay'>('all');
+  const [methodFilter, setMethodFilter] = useState<'all' | PaymentKey>('all');
+  const activePayKeys = activePaymentKeys(storeSettings as any);
   const [isExporting, setIsExporting] = useState(false);
 
   const exportToPDF = async () => {
@@ -100,13 +102,24 @@ export default function Budget() {
     // Helper to add split transactions by payment method
     const addSplits = (
       id: string, type: 'revenue' | 'expense', category: string, desc: string, dateStr: string,
-      cash: number, visa: number, wallet: number, instapay: number, carId?: string
+      split: Partial<Record<PaymentKey, number>>, carId?: string
     ) => {
       const date = new Date(dateStr);
-      if (cash > 0) txs.push({ id: `${id}-cash`, originalId: id, type, category, description: desc, amount: cash, payment_method: 'cash', date, car_id: carId });
-      if (visa > 0) txs.push({ id: `${id}-visa`, originalId: id, type, category, description: desc, amount: visa, payment_method: 'visa', date, car_id: carId });
-      if (wallet > 0) txs.push({ id: `${id}-wallet`, originalId: id, type, category, description: desc, amount: wallet, payment_method: 'wallet', date, car_id: carId });
-      if (instapay > 0) txs.push({ id: `${id}-instapay`, originalId: id, type, category, description: desc, amount: instapay, payment_method: 'instapay', date, car_id: carId });
+      ALL_PAYMENT_KEYS.forEach((m) => {
+        const amt = Number(split[m]) || 0;
+        if (amt > 0) txs.push({ id: `${id}-${m}`, originalId: id, type, category, description: desc, amount: amt, payment_method: m, date, car_id: carId });
+      });
+    };
+    // Read a record's per-method split; if all zero, fall back to its single payment_method.
+    const splitOf = (rec: any, fallbackAmount: number): Partial<Record<PaymentKey, number>> => {
+      const out: Partial<Record<PaymentKey, number>> = {};
+      let sum = 0;
+      ALL_PAYMENT_KEYS.forEach((m) => { const v = Math.abs(Number(rec[`paid_${m}`]) || 0); out[m] = v; sum += v; });
+      if (sum === 0) {
+        const m = (ALL_PAYMENT_KEYS as readonly string[]).includes(rec.payment_method) ? rec.payment_method as PaymentKey : 'cash';
+        out[m] = Math.abs(fallbackAmount || 0);
+      }
+      return out;
     };
 
     // 1. Pre-calculate debt payments per invoice to reconstruct original paid amount for old orders
@@ -144,19 +157,7 @@ export default function Budget() {
         const cat = o.type === 'sale' ? (o.car_id ? 'إيرادات خدمات (سيارات)' : 'مبيعات كاشير') : 'تحصيل من العميل';
         const desc = o.type === 'sale' ? `فاتورة مبيعات #${o.id}` : `تحصيل من العميل #${o.id}`;
         
-        let cash = o.paid_cash || 0;
-        let visa = o.paid_visa || 0;
-        let wallet = o.paid_wallet || 0;
-        let instapay = o.paid_instapay || 0;
-        
-        if (cash + visa + wallet + instapay === 0) {
-          cash = o.payment_method === 'cash' ? initialPaidAmount : 0;
-          visa = o.payment_method === 'visa' ? initialPaidAmount : 0;
-          wallet = o.payment_method === 'wallet' ? initialPaidAmount : 0;
-          instapay = o.payment_method === 'instapay' ? initialPaidAmount : 0;
-        }
-
-        addSplits(o.id, 'revenue', cat, desc, o.date, cash, visa, wallet, instapay, o.car_id);
+        addSplits(o.id, 'revenue', cat, desc, o.date, splitOf(o, initialPaidAmount), o.car_id);
       }
 
       // Expenses: Returns refunded amount
@@ -180,29 +181,13 @@ export default function Budget() {
     // 2. Manual finance transactions (store expenses and extra revenues)
     expenses.forEach(e => {
       const isRevenue = e.amount < 0;
-      let cash = Math.abs(e.paid_cash || 0);
-      let visa = Math.abs(e.paid_visa || 0);
-      let wallet = Math.abs(e.paid_wallet || 0);
-      let instapay = Math.abs(e.paid_instapay || 0);
-      
-      if (cash + visa + wallet + instapay === 0) {
-        const amt = Math.abs(e.amount || 0);
-        cash = e.payment_method === 'cash' ? amt : 0;
-        visa = e.payment_method === 'visa' ? amt : 0;
-        wallet = e.payment_method === 'wallet' ? amt : 0;
-        instapay = e.payment_method === 'instapay' ? amt : 0;
-      }
-
       addSplits(
         e.id,
         isRevenue ? 'revenue' : 'expense',
         `${isRevenue ? 'إيرادات' : 'مصروفات'} - ${e.category}`,
         e.note || (isRevenue ? 'إيراد عام' : 'مصروف عام'),
         e.date,
-        cash,
-        visa,
-        wallet,
-        instapay,
+        splitOf(e, e.amount),
         e.car_id
       );
     });
@@ -217,26 +202,16 @@ export default function Budget() {
           && Math.abs(e.paid_cash || 0) === Math.abs(et.paid_cash || 0)
           && Math.abs(e.paid_visa || 0) === Math.abs(et.paid_visa || 0)
           && Math.abs(e.paid_wallet || 0) === Math.abs(et.paid_wallet || 0)
-          && Math.abs(e.paid_instapay || 0) === Math.abs(et.paid_instapay || 0);
+          && Math.abs(e.paid_instapay || 0) === Math.abs(et.paid_instapay || 0)
+          && Math.abs((e as any).paid_method5 || 0) === Math.abs(et.paid_method5 || 0)
+          && Math.abs((e as any).paid_method6 || 0) === Math.abs(et.paid_method6 || 0);
       });
     };
 
     // 3. Purchase Invoices (Purchases & Supplier payments)
     purchaseInvoices.forEach(p => {
       if (p.paid_amount > 0) {
-        let cash = p.paid_cash || 0;
-        let visa = p.paid_visa || 0;
-        let wallet = p.paid_wallet || 0;
-        let instapay = p.paid_instapay || 0;
-        
-        if (cash + visa + wallet + instapay === 0) {
-          cash = p.payment_method === 'cash' ? p.paid_amount : 0;
-          visa = p.payment_method === 'visa' ? p.paid_amount : 0;
-          wallet = p.payment_method === 'wallet' ? p.paid_amount : 0;
-          instapay = p.payment_method === 'instapay' ? p.paid_amount : 0;
-        }
-
-        addSplits(p.id, 'expense', p.total === 0 ? 'سداد للمورد' : 'مشتريات وموردين', `${p.total === 0 ? 'سداد للمورد' : 'فاتورة مشتريات'} #${p.invoice_number}`, p.created_at, cash, visa, wallet, instapay);
+        addSplits(p.id, 'expense', p.total === 0 ? 'سداد للمورد' : 'مشتريات وموردين', `${p.total === 0 ? 'سداد للمورد' : 'فاتورة مشتريات'} #${p.invoice_number}`, p.created_at, splitOf(p, p.paid_amount));
       }
     });
 
@@ -245,19 +220,7 @@ export default function Budget() {
       if (hasMatchingExpense(et)) return;
       const cat = et.type === 'salary' ? 'رواتب' : 'سلف موظفين';
       
-      let cash = et.paid_cash || 0;
-      let visa = et.paid_visa || 0;
-      let wallet = et.paid_wallet || 0;
-      let instapay = et.paid_instapay || 0;
-      
-      if (cash + visa + wallet + instapay === 0) {
-        cash = et.payment_method === 'cash' ? et.amount : 0;
-        visa = et.payment_method === 'visa' ? et.amount : 0;
-        wallet = et.payment_method === 'wallet' ? et.amount : 0;
-        instapay = et.payment_method === 'instapay' ? et.amount : 0;
-      }
-
-      addSplits(et.id, 'expense', `رواتب وموظفين - ${cat}`, et.note || `دفع ${cat}`, et.created_at, cash, visa, wallet, instapay);
+      addSplits(et.id, 'expense', `رواتب وموظفين - ${cat}`, et.note || `دفع ${cat}`, et.created_at, splitOf(et, et.amount));
     });
 
     // Sort by date descending
@@ -446,15 +409,7 @@ export default function Budget() {
     }
   };
 
-  const getMethodName = (method: string) => {
-    switch (method) {
-      case 'cash': return 'كاش';
-      case 'visa': return 'فيزا';
-      case 'wallet': return 'محفظة';
-      case 'instapay': return 'انستاباي';
-      default: return method;
-    }
-  };
+  const getMethodName = (method: string) => payLabelOf(storeSettings as any, method);
 
   return (
     <div className="p-6 md:p-8 space-y-8 animate-fade-in" id="budget-report">
@@ -547,10 +502,7 @@ export default function Budget() {
               className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 focus:outline-none"
             >
               <option value="all">كل طرق الدفع</option>
-              <option value="cash">كاش</option>
-              <option value="visa">فيزا</option>
-              <option value="wallet">محافظ إلكترونية</option>
-              <option value="instapay">انستاباي</option>
+              {activePayKeys.map((k) => <option key={k} value={k}>{payLabelOf(storeSettings as any, k)}</option>)}
             </select>
           </div>
           </div>

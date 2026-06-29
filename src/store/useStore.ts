@@ -138,7 +138,9 @@ export interface PurchaseInvoice {
   paid_visa: number;
   paid_wallet: number;
   paid_instapay: number;
-  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay';
+  paid_method5?: number;
+  paid_method6?: number;
+  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay' | 'method5' | 'method6';
   created_at: string;
   notes?: string;
   items?: PurchaseItem[];
@@ -153,9 +155,11 @@ export interface Order {
   paid_visa: number;
   paid_wallet: number;
   paid_instapay: number;
+  paid_method5?: number;
+  paid_method6?: number;
   type: 'sale' | 'payment' | 'previous_debt';
   date: string;
-  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay';
+  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay' | 'method5' | 'method6';
   refund_method?: string;
   customer?: Customer;
   cashier_name?: string;
@@ -180,8 +184,10 @@ export interface Expense {
   paid_visa: number;
   paid_wallet: number;
   paid_instapay: number;
+  paid_method5?: number;
+  paid_method6?: number;
   note: string;
-  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay';
+  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay' | 'method5' | 'method6';
   date: string;
   car_id?: string;
 }
@@ -265,7 +271,8 @@ export interface StoreSettings {
   initial_balance: number;
   locationUrl?: string;
   cashierPermissions?: Record<string, boolean>; // صلاحيات الكاشير (إظهار/إخفاء مميزات)
-  paymentLabels?: Record<string, string>; // تسميات وسائل الدفع (كاش/فيزا/محفظة/انستا)
+  paymentLabels?: Record<string, string>; // تسميات وسائل الدفع (كاش/فيزا/محفظة/انستا/طريقة5/طريقة6)
+  paymentMethodsEnabled?: Record<string, boolean>; // تفعيل طرق الدفع الإضافية (method5/method6)
   showInvoiceProfit?: boolean; // إظهار ربح الفاتورة في شاشة الكاشير
   allowCashierEmployeeAdvance?: boolean; // السماح للكاشير بصرف سلف للموظفين (افتراضياً مغلق)
 }
@@ -290,11 +297,13 @@ export interface EmployeeTransaction {
   employee_id: string;
   amount: number;
   type: 'salary' | 'advance' | 'incentive';
-  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay';
+  payment_method: 'cash' | 'visa' | 'wallet' | 'instapay' | 'method5' | 'method6';
   paid_cash: number;
   paid_visa: number;
   paid_wallet: number;
   paid_instapay: number;
+  paid_method5?: number;
+  paid_method6?: number;
   month: string;
   deductions: number;
   note: string;
@@ -599,6 +608,7 @@ function mapSettings(row: Record<string, unknown>): StoreSettings {
     locationUrl: (row.location_url as string) ?? '',
     cashierPermissions: (row.cashier_permissions as Record<string, boolean>) ?? undefined,
     paymentLabels: (row.payment_labels as Record<string, string>) ?? undefined,
+    paymentMethodsEnabled: (row.payment_methods_enabled as Record<string, boolean>) ?? undefined,
     showInvoiceProfit: (row.show_invoice_profit as boolean) ?? true,
     allowCashierEmployeeAdvance: (row.allow_cashier_employee_advance as boolean) ?? false,
   };
@@ -931,6 +941,8 @@ export const useStore = create<CashierStore>((set, get) => ({
           paid_visa: (o.paid_visa as number) ?? 0,
           paid_wallet: (o.paid_wallet as number) ?? 0,
           paid_instapay: (o.paid_instapay as number) ?? 0,
+          paid_method5: (o.paid_method5 as number) ?? 0,
+          paid_method6: (o.paid_method6 as number) ?? 0,
           type: (o.type as string) as 'sale' | 'payment' ?? 'sale',
           payment_method: (o.payment_method as any) ?? 'cash',
           refund_method: (o.refund_method as string) ?? undefined,
@@ -2212,6 +2224,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: (o.paid_visa as number) ?? 0,
         paid_wallet: (o.paid_wallet as number) ?? 0,
         paid_instapay: (o.paid_instapay as number) ?? 0,
+        paid_method5: (o.paid_method5 as number) ?? 0,
+        paid_method6: (o.paid_method6 as number) ?? 0,
         type: (o.type as string) as 'sale' | 'payment' ?? 'sale',
         payment_method: (o.payment_method as any) ?? 'cash',
         date: o.created_at as string,
@@ -2574,6 +2588,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     if (newSettings.locationUrl !== undefined) mapped.location_url = newSettings.locationUrl;
     if (newSettings.cashierPermissions !== undefined) mapped.cashier_permissions = newSettings.cashierPermissions;
     if (newSettings.paymentLabels !== undefined) mapped.payment_labels = newSettings.paymentLabels;
+    if (newSettings.paymentMethodsEnabled !== undefined) mapped.payment_methods_enabled = newSettings.paymentMethodsEnabled;
     if (newSettings.showInvoiceProfit !== undefined) mapped.show_invoice_profit = newSettings.showInvoiceProfit;
     if (newSettings.allowCashierEmployeeAdvance !== undefined) mapped.allow_cashier_employee_advance = newSettings.allowCashierEmployeeAdvance;
 
