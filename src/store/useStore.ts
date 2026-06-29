@@ -417,7 +417,7 @@ interface CashierStore {
     paidAmount?: number, 
     type?: 'sale' | 'payment' | 'previous_debt', 
     paymentMethod?: string,
-    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number },
+    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number },
     cashierName?: string,
     notes?: string,
     couponCode?: string,
@@ -428,7 +428,7 @@ interface CashierStore {
     invoiceId: string, 
     customerId: string, 
     amount: number, 
-    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number },
+    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number },
     paymentMethod?: string,
     discount?: number
   ) => Promise<string | null | void>;
@@ -448,9 +448,9 @@ interface CashierStore {
   
   // Expenses
   addExpense: (expense: Omit<Expense, 'id' | 'date'>) => Promise<void>;
-  managerWithdraw: (managerName: string, split: { cash: number; visa: number; wallet: number; instapay: number }) => Promise<boolean>;
+  managerWithdraw: (managerName: string, split: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }) => Promise<boolean>;
   recordPartnerTransaction: (tx: { partner_id: string; partner_name: string; type: 'deposit' | 'withdraw'; amount: number; treasury: 'shop' | 'main'; method: string; note?: string }) => Promise<boolean>;
-  savingsTransfer: (split: { cash: number; visa: number; wallet: number; instapay: number }, direction: 'in' | 'out', source: string, note?: string) => Promise<boolean>;
+  savingsTransfer: (split: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }, direction: 'in' | 'out', source: string, note?: string) => Promise<boolean>;
   updateExpense: (id: string, expense: Partial<Expense>) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
 
@@ -480,7 +480,7 @@ interface CashierStore {
 
   // Manufacturing
   loadManufacturing: () => Promise<void>;
-  addMaterial: (m: Omit<Material, 'id' | 'created_at'>, payment?: { supplierId?: string; split?: { cash: number; visa: number; wallet: number; instapay: number } }) => Promise<void>;
+  addMaterial: (m: Omit<Material, 'id' | 'created_at'>, payment?: { supplierId?: string; split?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number } }) => Promise<void>;
   updateMaterial: (id: string, m: Partial<Material>) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
   transferFromFactory: (productId: string, toDisplay: number, toWarehouse: number) => Promise<boolean>;
@@ -493,7 +493,7 @@ interface CashierStore {
     extra_costs: number;
     display_quantity?: number;
     warehouse_quantity?: number;
-    extra_costs_split?: { cash: number; visa: number; wallet: number; instapay: number };
+    extra_costs_split?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number };
     notes?: string;
     materials: { material_id: string; quantity: number }[];
   }) => Promise<boolean>;
@@ -532,16 +532,16 @@ interface CashierStore {
   addPurchaseInvoice: (
     invoice: Omit<PurchaseInvoice, 'id' | 'created_at' | 'items' | 'paid_cash' | 'paid_visa' | 'paid_wallet' | 'paid_instapay'>, 
     items: PurchaseItem[],
-    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number }
+    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }
   ) => Promise<void>;
   updatePurchaseInvoice: (
     invoiceId: string,
     invoice: Omit<PurchaseInvoice, 'id' | 'created_at' | 'items' | 'paid_cash' | 'paid_visa' | 'paid_wallet' | 'paid_instapay'>, 
       items: PurchaseItem[],
-    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number }
+    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }
   ) => Promise<void>;
   deletePurchaseInvoice: (id: string) => Promise<void>;
-  paySupplierDebt: (supplierId: string, amount: number, splitPayments?: { cash: number; visa: number; wallet: number; instapay: number }) => Promise<void>;
+  paySupplierDebt: (supplierId: string, amount: number, splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number }) => Promise<void>;
 
   // Car Maintenance
   loadCarSubscriptions: () => Promise<void>;
@@ -556,7 +556,7 @@ interface CashierStore {
     appointmentId: string, 
     report: string, 
     items: { type: 'part' | 'labor', name: string, costPrice: number, salePrice: number }[],
-    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number },
+    splitPayments?: { cash: number; visa: number; wallet: number; instapay: number; method5?: number; method6?: number },
     paymentMethod?: 'cash' | 'visa' | 'wallet' | 'instapay'
   ) => Promise<void>;
   completeAppointmentWithRegisteredTransactions: (appointmentId: string, cost: number, report: string) => Promise<void>;
@@ -698,16 +698,21 @@ const getSplits = (split: any, method: string, amount: number) => {
   const visa = Number(split?.visa) || 0;
   const wallet = Number(split?.wallet) || 0;
   const instapay = Number(split?.instapay) || 0;
-  if (cash + visa + wallet + instapay > 0) {
-    return { cash, visa, wallet, instapay };
+  const method5 = Number(split?.method5) || 0;
+  const method6 = Number(split?.method6) || 0;
+  if (cash + visa + wallet + instapay + method5 + method6 > 0) {
+    return { cash, visa, wallet, instapay, method5, method6 };
   }
   return {
     cash: method === 'cash' ? amount : 0,
     visa: method === 'visa' ? amount : 0,
     wallet: method === 'wallet' ? amount : 0,
-    instapay: method === 'instapay' ? amount : 0
+    instapay: method === 'instapay' ? amount : 0,
+    method5: method === 'method5' ? amount : 0,
+    method6: method === 'method6' ? amount : 0,
   };
 };
+
 
 // ─── Store ───────────────────────────────────────────────────
 export const useStore = create<CashierStore>((set, get) => ({
@@ -1338,6 +1343,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         type,
         payment_method: paymentMethod as any,
         date: new Date().toISOString(),
@@ -1464,6 +1471,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         type,
         customer_id: customerId,
         payment_method: paymentMethod,
@@ -1515,6 +1524,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         type,
         payment_method: paymentMethod as any,
         date: new Date().toISOString(),
@@ -1620,6 +1631,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         type: 'payment',
         customer_id: customerId,
         payment_method: paymentMethod,
@@ -2334,6 +2347,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: split.visa || 0,
         paid_wallet: split.wallet || 0,
         paid_instapay: split.instapay || 0,
+        paid_method5: split.method5 || 0,
+        paid_method6: split.method6 || 0,
         payment_method: primary,
       }).select().single();
       if (inv) set((s) => ({ purchaseInvoices: [{ ...(inv as any), items: [] }, ...s.purchaseInvoices] }));
@@ -2348,6 +2363,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         paid_visa: split.visa || 0,
         paid_wallet: split.wallet || 0,
         paid_instapay: split.instapay || 0,
+        paid_method5: split.method5 || 0,
+        paid_method6: split.method6 || 0,
       } as Omit<Expense, 'id' | 'date'>);
     }
   },
@@ -2495,6 +2512,8 @@ export const useStore = create<CashierStore>((set, get) => ({
           amount: extra_costs,
           note: `مصنعية: ${input.product_name}${input.notes ? ' — ' + input.notes : ''}`,
           payment_method: primary,
+          paid_method5: finalSplit.method5 || 0,
+          paid_method6: finalSplit.method6 || 0,
           paid_cash: finalSplit.cash || 0,
           paid_visa: finalSplit.visa || 0,
           paid_wallet: finalSplit.wallet || 0,
@@ -3244,6 +3263,8 @@ setupRealtime: () => {
       paid_visa: expense.paid_visa || 0,
       paid_wallet: expense.paid_wallet || 0,
       paid_instapay: expense.paid_instapay || 0,
+      paid_method5: (expense as any).paid_method5 || 0,
+      paid_method6: (expense as any).paid_method6 || 0,
       note: expense.note,
       payment_method: expense.payment_method,
       car_id: expense.car_id || null
@@ -3263,6 +3284,8 @@ setupRealtime: () => {
         paid_visa: (data as any).paid_visa || 0,
         paid_wallet: (data as any).paid_wallet || 0,
         paid_instapay: (data as any).paid_instapay || 0,
+        paid_method5: (data as any).paid_method5 || 0,
+        paid_method6: (data as any).paid_method6 || 0,
         note: (data as any).note,
         payment_method: (data as any).payment_method,
         date: (data as any).created_at,
@@ -3312,6 +3335,8 @@ setupRealtime: () => {
       visa: method === 'visa' ? amount : 0,
       wallet: method === 'wallet' ? amount : 0,
       instapay: method === 'instapay' ? amount : 0,
+      method5: method === 'method5' ? amount : 0,
+      method6: method === 'method6' ? amount : 0,
     };
     const { data, error } = await supabase.from('partner_transactions').insert({
       partner_id: tx.partner_id,
@@ -3329,13 +3354,13 @@ setupRealtime: () => {
       if (tx.type === 'withdraw') {
         await get().addExpense({
           category: 'سحب شريك', amount, note: `سحب الشريك: ${tx.partner_name}`,
-          payment_method: method, paid_cash: split.cash, paid_visa: split.visa, paid_wallet: split.wallet, paid_instapay: split.instapay,
+          payment_method: method, paid_cash: split.cash, paid_visa: split.visa, paid_wallet: split.wallet, paid_instapay: split.instapay, paid_method5: split.method5 || 0, paid_method6: split.method6 || 0,
         } as Omit<Expense, 'id' | 'date'>);
       } else {
         // إيداع = إيراد للخزنة (مبلغ سالب في المصروفات)
         await get().addExpense({
           category: 'إيداع شريك', amount: -amount, note: `إيداع الشريك: ${tx.partner_name}`,
-          payment_method: method, paid_cash: split.cash, paid_visa: split.visa, paid_wallet: split.wallet, paid_instapay: split.instapay,
+          payment_method: method, paid_cash: split.cash, paid_visa: split.visa, paid_wallet: split.wallet, paid_instapay: split.instapay, paid_method5: split.method5 || 0, paid_method6: split.method6 || 0,
         } as Omit<Expense, 'id' | 'date'>);
       }
     }
@@ -3355,8 +3380,8 @@ setupRealtime: () => {
   // تحويل بين خزنة المحل وخزنة الادخار (كل طريقة بطريقتها). ينعكس على خزنة المحل
   // كمصروف (تحويل للادخار) أو إيراد (تحويل من الادخار)، ويُسجَّل في دفتر الادخار.
   savingsTransfer: async (split, direction, source, note) => {
-    const s = { cash: Number(split?.cash) || 0, visa: Number(split?.visa) || 0, wallet: Number(split?.wallet) || 0, instapay: Number(split?.instapay) || 0 };
-    const total = s.cash + s.visa + s.wallet + s.instapay;
+    const s = { cash: Number(split?.cash) || 0, visa: Number(split?.visa) || 0, wallet: Number(split?.wallet) || 0, instapay: Number(split?.instapay) || 0, method5: Number(split?.method5) || 0, method6: Number(split?.method6) || 0 };
+    const total = s.cash + s.visa + s.wallet + s.instapay + s.method5 + s.method6;
     if (total <= 0) return false;
     const primary = s.cash >= s.visa && s.cash >= s.wallet && s.cash >= s.instapay ? 'cash'
       : s.visa >= s.wallet && s.visa >= s.instapay ? 'visa'
@@ -3368,11 +3393,11 @@ setupRealtime: () => {
       amount: direction === 'in' ? total : -total,
       note: note || (direction === 'in' ? 'تحويل من المحل للادخار' : 'تحويل من الادخار للمحل'),
       payment_method: primary,
-      paid_cash: s.cash, paid_visa: s.visa, paid_wallet: s.wallet, paid_instapay: s.instapay,
+      paid_cash: s.cash, paid_visa: s.visa, paid_wallet: s.wallet, paid_instapay: s.instapay, paid_method5: s.method5 || 0, paid_method6: s.method6 || 0,
     } as Omit<Expense, 'id' | 'date'>);
 
     // دفتر الادخار: صف لكل طريقة بمبلغ
-    const rows = (['cash', 'visa', 'wallet', 'instapay'] as const)
+    const rows = (['cash', 'visa', 'wallet', 'instapay', 'method5', 'method6'] as const)
       .filter((m) => s[m] > 0)
       .map((m) => ({ direction, amount: s[m], method: m, source: source || 'manual', note: note || null }));
     if (rows.length) await supabase.from('savings_transactions').insert(rows);
@@ -3397,6 +3422,8 @@ setupRealtime: () => {
       paid_visa: expense.paid_visa,
       paid_wallet: expense.paid_wallet,
       paid_instapay: expense.paid_instapay,
+      paid_method5: (expense as any).paid_method5,
+      paid_method6: (expense as any).paid_method6,
       note: expense.note,
       payment_method: expense.payment_method,
       created_at: expense.date
@@ -3709,6 +3736,8 @@ setupRealtime: () => {
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         payment_method: invoice.payment_method
       })
       .select()
@@ -3868,6 +3897,8 @@ setupRealtime: () => {
         paid_visa: splits.visa,
         paid_wallet: splits.wallet,
         paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
         payment_method: invoice.payment_method
       })
       .eq('id', invoiceId)
@@ -3970,6 +4001,8 @@ setupRealtime: () => {
           paid_visa: splits.visa,
           paid_wallet: splits.wallet,
           paid_instapay: splits.instapay,
+        paid_method5: splits.method5 || 0,
+        paid_method6: splits.method6 || 0,
           payment_method: primaryMethod
         })
         .select()
@@ -4110,9 +4143,11 @@ setupRealtime: () => {
         paid_visa: transaction.paid_visa,
         paid_wallet: transaction.paid_wallet,
         paid_instapay: transaction.paid_instapay,
+        paid_method5: (transaction as any).paid_method5 || 0,
+        paid_method6: (transaction as any).paid_method6 || 0,
         note: note,
         payment_method: transaction.payment_method
-      });
+      } as any);
 
       set((state) => ({ employeeTransactions: [data as EmployeeTransaction, ...state.employeeTransactions] }));
     }

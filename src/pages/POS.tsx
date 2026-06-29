@@ -330,11 +330,12 @@ export default function POS() {
   const [customerId, setCustomerId] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
-  const [paidCash, setPaidCash] = useState('');
   const [deferredNote, setDeferredNote] = useState('');
-  const [paidVisa, setPaidVisa] = useState('');
-  const [paidWallet, setPaidWallet] = useState('');
-  const [paidInstapay, setPaidInstapay] = useState('');
+  // مبالغ الدفع لكل طريقة (مفتاح الطريقة → نص المبلغ) — يدعم الطرق الستة
+  const [payInput, setPayInput] = useState<Record<string, string>>({});
+  const setPay = (k: string, v: string) => setPayInput((s) => ({ ...s, [k]: v }));
+  const paidVal = (k: string) => parseFloat(payInput[k] || '') || 0;
+  const paidTotal = activePayKeys.reduce((s, k) => s + paidVal(k), 0);
   const [discountStr, setDiscountStr] = useState('');
   const [couponInput, setCouponInput] = useState('');
   const [customerDebt, setCustomerDebt] = useState<number>(0);
@@ -355,7 +356,7 @@ export default function POS() {
       tax: 0,
       total: order.total,
       paidAmount: order.paid_amount,
-      splitPayments: { cash: order.paid_cash || 0, visa: order.paid_visa || 0, wallet: order.paid_wallet || 0, instapay: order.paid_instapay || 0 },
+      splitPayments: { cash: order.paid_cash || 0, visa: order.paid_visa || 0, wallet: order.paid_wallet || 0, instapay: order.paid_instapay || 0, method5: (order as any).paid_method5 || 0, method6: (order as any).paid_method6 || 0 },
       customerName: order.customer?.name || '',
       customerPhone: order.customer?.phone || '',
       customId: order.customer?.custom_id || order.customer?.card_number || '',
@@ -474,10 +475,10 @@ export default function POS() {
   const [showFinanceModal, setShowFinanceModal] = useState(false);
   const [financeType, setFinanceType] = useState<'expense' | 'income' | 'transfer'>('expense');
   const [financeCategory, setFinanceCategory] = useState('عام');
-  const [financeCash, setFinanceCash] = useState('');
-  const [financeVisa, setFinanceVisa] = useState('');
-  const [financeWallet, setFinanceWallet] = useState('');
-  const [financeInstapay, setFinanceInstapay] = useState('');
+  // مبالغ المعاملة المالية لكل طريقة دفع مفعّلة
+  const [financePay, setFinancePay] = useState<Record<string, string>>({});
+  const financeVal = (k: string) => parseFloat(financePay[k] || '') || 0;
+  const financeTotal = activePayKeys.reduce((s, k) => s + financeVal(k), 0);
   const [financeNote, setFinanceNote] = useState('');
   const [financeTransferFrom, setFinanceTransferFrom] = useState('instapay');
   const [financeTransferTo, setFinanceTransferTo] = useState('cash');
@@ -487,17 +488,16 @@ export default function POS() {
   // ── سلفة موظف (صرف سلفة تُخصم من راتب الشهر) ──
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [advanceEmpId, setAdvanceEmpId] = useState('');
-  const [advanceCash, setAdvanceCash] = useState('');
-  const [advanceVisa, setAdvanceVisa] = useState('');
-  const [advanceWallet, setAdvanceWallet] = useState('');
-  const [advanceInstapay, setAdvanceInstapay] = useState('');
+  const [advancePay, setAdvancePay] = useState<Record<string, string>>({});
+  const setAdvance = (k: string, v: string) => setAdvancePay((s) => ({ ...s, [k]: v }));
+  const advanceVal = (k: string) => parseFloat(advancePay[k] || '') || 0;
   const [advanceNote, setAdvanceNote] = useState('');
   const [isSubmittingAdvance, setIsSubmittingAdvance] = useState(false);
   const canEmployeeAdvance = isMaster || !!(storeSettings as any).allowCashierEmployeeAdvance;
-  const advanceTotal = (parseFloat(advanceCash) || 0) + (parseFloat(advanceVisa) || 0) + (parseFloat(advanceWallet) || 0) + (parseFloat(advanceInstapay) || 0);
+  const advanceTotal = activePayKeys.reduce((s, k) => s + advanceVal(k), 0);
 
   const resetAdvanceForm = () => {
-    setAdvanceEmpId(''); setAdvanceCash(''); setAdvanceVisa(''); setAdvanceWallet(''); setAdvanceInstapay(''); setAdvanceNote('');
+    setAdvanceEmpId(''); setAdvancePay({}); setAdvanceNote('');
   };
 
   // ── طباعة باركود منتج من الكاشير ──
@@ -536,17 +536,13 @@ export default function POS() {
 
   const handleAdvanceSubmit = async () => {
     if (!advanceEmpId) { alert('يرجى اختيار الموظف'); return; }
-    const cash = parseFloat(advanceCash) || 0;
-    const visa = parseFloat(advanceVisa) || 0;
-    const wallet = parseFloat(advanceWallet) || 0;
-    const insta = parseFloat(advanceInstapay) || 0;
-    const total = cash + visa + wallet + insta;
+    const total = advanceTotal;
     if (total <= 0) { alert('يرجى إدخال مبلغ السلفة أولاً'); return; }
 
     const emp = employees.find((x: any) => x.id === advanceEmpId);
-    const paymentMethod = [
-      { name: 'cash', amount: cash }, { name: 'visa', amount: visa }, { name: 'wallet', amount: wallet }, { name: 'instapay', amount: insta }
-    ].sort((a, b) => b.amount - a.amount)[0].name as 'cash' | 'visa' | 'wallet' | 'instapay';
+    const paymentMethod = activePayKeys
+      .map((k) => ({ name: k, amount: advanceVal(k) }))
+      .sort((a, b) => b.amount - a.amount)[0].name as any;
     const actorName = activeCashier?.name || 'كاشير';
 
     setIsSubmittingAdvance(true);
@@ -557,14 +553,16 @@ export default function POS() {
         amount: total,
         type: 'advance',
         payment_method: paymentMethod,
-        paid_cash: cash,
-        paid_visa: visa,
-        paid_wallet: wallet,
-        paid_instapay: insta,
+        paid_cash: advanceVal('cash'),
+        paid_visa: advanceVal('visa'),
+        paid_wallet: advanceVal('wallet'),
+        paid_instapay: advanceVal('instapay'),
+        paid_method5: advanceVal('method5'),
+        paid_method6: advanceVal('method6'),
         month: new Date().toISOString().slice(0, 7),
         deductions: 0,
         note: (advanceNote ? `${advanceNote} - ` : '') + `سلفة بواسطة ${actorName}`,
-      });
+      } as any);
 
       // تنبيه المدير على تليجرام
       fetch('/api/telegram-alert', {
@@ -577,7 +575,7 @@ export default function POS() {
           amount: total,
           description: `سلفة موظف: ${emp?.name || ''}`,
           noteText: advanceNote || '',
-          paymentMethod: cash > 0 ? 'كاش' : visa > 0 ? 'فيزا' : wallet > 0 ? 'محفظة' : 'انستاباي'
+          paymentMethod: payLabel(paymentMethod)
         })
       }).catch(() => {});
 
@@ -630,17 +628,20 @@ export default function POS() {
         const amt = parseFloat(financeTransferAmount) || 0;
         if (amt <= 0) { alert('يرجى إدخال مبلغ صحيح'); return; }
         if (financeTransferFrom === financeTransferTo) { alert('لا يمكن التحويل لنفس وسيلة الدفع'); return; }
-        const splits = { cash: 0, visa: 0, wallet: 0, instapay: 0 };
-        splits[financeTransferFrom as keyof typeof splits] = -amt;
-        splits[financeTransferTo as keyof typeof splits] = amt;
+        const splits: Record<string, number> = {};
+        activePayKeys.forEach((k) => { splits[k] = 0; });
+        splits[financeTransferFrom] = -amt;
+        splits[financeTransferTo] = amt;
         await addExpense({
           category: 'تحويل داخلي',
           amount: 0,
-          paid_cash: splits.cash,
-          paid_visa: splits.visa,
-          paid_wallet: splits.wallet,
-          paid_instapay: splits.instapay,
-          note: financeNote || `تحويل ${amt} من ${financeTransferFrom === 'cash' ? 'كاش' : financeTransferFrom === 'visa' ? 'فيزا' : financeTransferFrom === 'wallet' ? 'محفظة' : 'انستاباي'} إلى ${financeTransferTo === 'cash' ? 'كاش' : financeTransferTo === 'visa' ? 'فيزا' : financeTransferTo === 'wallet' ? 'محفظة' : 'انستاباي'} - بواسطة ${actorName}`,
+          paid_cash: splits.cash || 0,
+          paid_visa: splits.visa || 0,
+          paid_wallet: splits.wallet || 0,
+          paid_instapay: splits.instapay || 0,
+          paid_method5: splits.method5 || 0,
+          paid_method6: splits.method6 || 0,
+          note: financeNote || `تحويل ${amt} من ${payLabel(financeTransferFrom)} إلى ${payLabel(financeTransferTo)} - بواسطة ${actorName}`,
           payment_method: 'cash'
         } as any);
         // Send telegram
@@ -651,30 +652,27 @@ export default function POS() {
             type: 'transfer',
             actor: actorName,
             date: new Date().toISOString(),
-            description: `تحويل ${amt} من ${financeTransferFrom === 'cash' ? 'كاش' : financeTransferFrom === 'visa' ? 'فيزا' : financeTransferFrom === 'wallet' ? 'محفظة' : 'انستاباي'} إلى ${financeTransferTo === 'cash' ? 'كاش' : financeTransferTo === 'visa' ? 'فيزا' : financeTransferTo === 'wallet' ? 'محفظة' : 'انستاباي'}`,
+            description: `تحويل ${amt} من ${payLabel(financeTransferFrom)} إلى ${payLabel(financeTransferTo)}`,
             amount: amt,
             noteText: financeNote || ''
           })
         }).catch(() => {});
       } else {
-        const cash = parseFloat(financeCash) || 0;
-        const visa = parseFloat(financeVisa) || 0;
-        const wallet = parseFloat(financeWallet) || 0;
-        const insta = parseFloat(financeInstapay) || 0;
-        const total = cash + visa + wallet + insta;
+        const total = financeTotal;
         if (total <= 0) { alert('يرجى إدخال مبالغ الدفع أولاً'); return; }
         const multiplier = financeType === 'income' ? -1 : 1;
+        const primaryM = activePayKeys.map((k) => ({ name: k, amount: financeVal(k) })).sort((a, b) => b.amount - a.amount)[0].name;
         await addExpense({
           category: financeCategory,
           amount: total * multiplier,
-          paid_cash: cash * multiplier,
-          paid_visa: visa * multiplier,
-          paid_wallet: wallet * multiplier,
-          paid_instapay: insta * multiplier,
+          paid_cash: financeVal('cash') * multiplier,
+          paid_visa: financeVal('visa') * multiplier,
+          paid_wallet: financeVal('wallet') * multiplier,
+          paid_instapay: financeVal('instapay') * multiplier,
+          paid_method5: financeVal('method5') * multiplier,
+          paid_method6: financeVal('method6') * multiplier,
           note: (financeNote || (financeType === 'income' ? 'إيراد' : 'مصروف')) + ` - بواسطة ${actorName}`,
-          payment_method: [
-            { name: 'cash', amount: cash }, { name: 'visa', amount: visa }, { name: 'wallet', amount: wallet }, { name: 'instapay', amount: insta }
-          ].sort((a, b) => b.amount - a.amount)[0].name
+          payment_method: primaryM
         } as any);
         // Send telegram
         fetch('/api/telegram-alert', {
@@ -687,13 +685,13 @@ export default function POS() {
             amount: total,
             description: `${financeType === 'income' ? 'إيراد' : 'مصروف'}: ${financeCategory}`,
             noteText: financeNote || '',
-            paymentMethod: cash > 0 ? 'كاش' : visa > 0 ? 'فيزا' : wallet > 0 ? 'محفظة' : 'انستاباي'
+            paymentMethod: payLabel(primaryM)
           })
         }).catch(() => {});
       }
       alert('تم تسجيل المعاملة بنجاح');
       setShowFinanceModal(false);
-      setFinanceCash(''); setFinanceVisa(''); setFinanceWallet(''); setFinanceInstapay('');
+      setFinancePay({});
       setFinanceNote(''); setFinanceTransferAmount(''); setFinanceCategory('عام');
       setFinanceType('expense');
     } catch (e) {
@@ -1028,11 +1026,9 @@ export default function POS() {
     
     ${(() => {
       const sp = orderDetails.splitPayments || {};
-      const parts = [];
-      if (sp.cash > 0) parts.push(`كاش: ${sp.cash.toFixed(2)}`);
-      if (sp.visa > 0) parts.push(`فيزا: ${sp.visa.toFixed(2)}`);
-      if (sp.wallet > 0) parts.push(`محفظة: ${sp.wallet.toFixed(2)}`);
-      if (sp.instapay > 0) parts.push(`انستا: ${sp.instapay.toFixed(2)}`);
+      const parts = activePayKeys
+        .filter((k) => (Number(sp[k]) || 0) > 0)
+        .map((k) => `${payLabel(k)}: ${(Number(sp[k]) || 0).toFixed(2)}`);
       if (parts.length === 0) return '';
       const cells = parts.map(p => `<div style="width:50%;font-size:11px;font-weight:700;padding:1px 0;">${p}</div>`).join('');
       return `<div style="margin-top:4px;padding:4px 5px;border:1px solid #000;border-radius:4px;"><div style="font-size:10px;font-weight:900;margin-bottom:2px;">طرق الدفع:</div><div style="display:flex;flex-wrap:wrap;">${cells}</div></div>`;
@@ -1076,68 +1072,35 @@ export default function POS() {
     );
     const currentCustomId = matchedCustomer?.custom_id || currentCustomerCard;
 
-    const splitPayments = {
-      cash: parseFloat(paidCash) || 0,
-      visa: parseFloat(paidVisa) || 0,
-      wallet: parseFloat(paidWallet) || 0,
-      instapay: parseFloat(paidInstapay) || 0
-    };
+    // مبالغ كل طريقة دفع مفعّلة
+    const splitPayments: Record<string, number> = {};
+    activePayKeys.forEach((k) => { splitPayments[k] = paidVal(k); });
 
-    const finalPaidAmount = splitPayments.cash + splitPayments.visa + splitPayments.wallet + splitPayments.instapay;
-    
-    // Handle overpayment (Change)
+    const finalPaidAmount = activePayKeys.reduce((s, k) => s + splitPayments[k], 0);
+
+    // Handle overpayment (Change): اخصم الباقي من كل طريقة بالترتيب
     const change = Math.max(0, finalPaidAmount - currentTotal);
-    
     let remainingChange = change;
-    let finalCash = splitPayments.cash;
-    let finalVisa = splitPayments.visa;
-    let finalWallet = splitPayments.wallet;
-    let finalInstapay = splitPayments.instapay;
-
-    if (remainingChange > 0) {
-      const deductFromCash = Math.min(finalCash, remainingChange);
-      finalCash -= deductFromCash;
-      remainingChange -= deductFromCash;
-    }
-    if (remainingChange > 0) {
-      const deductFromVisa = Math.min(finalVisa, remainingChange);
-      finalVisa -= deductFromVisa;
-      remainingChange -= deductFromVisa;
-    }
-    if (remainingChange > 0) {
-      const deductFromWallet = Math.min(finalWallet, remainingChange);
-      finalWallet -= deductFromWallet;
-      remainingChange -= deductFromWallet;
-    }
-    if (remainingChange > 0) {
-      const deductFromInstapay = Math.min(finalInstapay, remainingChange);
-      finalInstapay -= deductFromInstapay;
-      remainingChange -= deductFromInstapay;
+    const adjustedSplit: Record<string, number> = { ...splitPayments };
+    for (const k of activePayKeys) {
+      if (remainingChange <= 0) break;
+      const ded = Math.min(adjustedSplit[k], remainingChange);
+      adjustedSplit[k] -= ded;
+      remainingChange -= ded;
     }
 
-    const adjustedSplit = {
-      cash: finalCash,
-      visa: finalVisa,
-      wallet: finalWallet,
-      instapay: finalInstapay
-    };
-
-    const isAllEmpty = !paidCash && !paidVisa && !paidWallet && !paidInstapay;
+    const isAllEmpty = activePayKeys.every((k) => !payInput[k]);
 
     // لو ما دخلتش أي مبلغ → الفاتورة كلها آجل (0 مدفوع)
     const effectivePaidAmount = isAllEmpty ? 0 : (finalPaidAmount - change);
-    const finalSplit = isAllEmpty
-      ? { cash: 0, visa: 0, wallet: 0, instapay: 0 }
-      : adjustedSplit;
-    
-    const methods = [
-      { name: 'cash', amount: finalSplit.cash },
-      { name: 'visa', amount: finalSplit.visa },
-      { name: 'wallet', amount: finalSplit.wallet },
-      { name: 'instapay', amount: finalSplit.instapay }
-    ];
+    const zeroSplit: Record<string, number> = {};
+    activePayKeys.forEach((k) => { zeroSplit[k] = 0; });
+    const finalSplit = isAllEmpty ? zeroSplit : adjustedSplit;
+
     // لو كلها صفر (آجل كامل) → الطريقة الافتراضية cash
-    const primaryMethod = isAllEmpty ? 'cash' : methods.sort((a, b) => b.amount - a.amount)[0].name;
+    const primaryMethod = isAllEmpty
+      ? 'cash'
+      : activePayKeys.map((k) => ({ name: k, amount: finalSplit[k] })).sort((a, b) => b.amount - a.amount)[0].name;
 
     // ── Validate credit (آجل) sales ──────────────────────────────────────────
     if (effectivePaidAmount < currentTotal) {
@@ -1149,7 +1112,7 @@ export default function POS() {
       }
     }
 
-    const invoiceId = await checkout(currentTotal, { name: currentCustomerName, phone: currentCustomerPhone, custom_id: currentCustomId }, effectivePaidAmount, 'sale', primaryMethod as any, finalSplit, undefined, deferredNote, currentCouponCode, currentCouponDiscount);
+    const invoiceId = await checkout(currentTotal, { name: currentCustomerName, phone: currentCustomerPhone, custom_id: currentCustomId }, effectivePaidAmount, 'sale', primaryMethod as any, finalSplit as any, undefined, deferredNote, currentCouponCode, currentCouponDiscount);
 
     const details: any = {
       cart: currentCart,
@@ -1190,10 +1153,7 @@ export default function POS() {
     setCustomerName('');
     setCustomerPhone('');
     setCustomerId('');
-    setPaidCash('');
-    setPaidVisa('');
-    setPaidWallet('');
-    setPaidInstapay('');
+    setPayInput({});
     setDiscountStr('');
     setCouponInput('');
     setCustomerDebt(0);
@@ -1553,10 +1513,7 @@ export default function POS() {
                       value={financeTransferFrom}
                       onChange={e => setFinanceTransferFrom(e.target.value)}
                     >
-                      <option value="cash">كاش</option>
-                      <option value="visa">فيزا</option>
-                      <option value="wallet">محفظة</option>
-                      <option value="instapay">انستاباي</option>
+                      {activePayKeys.map((k) => <option key={k} value={k}>{payLabel(k)}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1566,10 +1523,7 @@ export default function POS() {
                       value={financeTransferTo}
                       onChange={e => setFinanceTransferTo(e.target.value)}
                     >
-                      <option value="cash">كاش</option>
-                      <option value="visa">فيزا</option>
-                      <option value="wallet">محفظة</option>
-                      <option value="instapay">انستاباي</option>
+                      {activePayKeys.map((k) => <option key={k} value={k}>{payLabel(k)}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1611,39 +1565,20 @@ export default function POS() {
                     </select>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">كاش</label>
-                      <input type="number" dir="ltr" placeholder="0.00"
-                        className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                        value={financeCash} onChange={e => setFinanceCash(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">فيزا</label>
-                      <input type="number" dir="ltr" placeholder="0.00"
-                        className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                        value={financeVisa} onChange={e => setFinanceVisa(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">محفظة</label>
-                      <input type="number" dir="ltr" placeholder="0.00"
-                        className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                        value={financeWallet} onChange={e => setFinanceWallet(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">انستاباي</label>
-                      <input type="number" dir="ltr" placeholder="0.00"
-                        className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                        value={financeInstapay} onChange={e => setFinanceInstapay(e.target.value)}
-                      />
-                    </div>
+                    {activePayKeys.map((k) => (
+                      <div key={k}>
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel(k)}</label>
+                        <input type="number" dir="ltr" placeholder="0.00"
+                          className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                          value={financePay[k] || ''} onChange={e => setFinancePay((s) => ({ ...s, [k]: e.target.value }))}
+                        />
+                      </div>
+                    ))}
                   </div>
                   <div className="bg-gray-100 dark:bg-slate-700 rounded-xl p-3 flex justify-between items-center">
                     <span className="text-sm font-bold text-slate-500 dark:text-slate-400">إجمالي المبلغ:</span>
                     <span className={`text-xl font-black ${financeType === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {((parseFloat(financeCash) || 0) + (parseFloat(financeVisa) || 0) + (parseFloat(financeWallet) || 0) + (parseFloat(financeInstapay) || 0)).toLocaleString()} {storeSettings.currency}
+                      {financeTotal.toLocaleString()} {storeSettings.currency}
                     </span>
                   </div>
                 </>
@@ -1702,34 +1637,15 @@ export default function POS() {
               <div>
                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">طريقة صرف السلفة (المبلغ)</label>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('cash')}</label>
-                    <input type="number" dir="ltr" placeholder="0.00"
-                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                      value={advanceCash} onChange={(e) => setAdvanceCash(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('visa')}</label>
-                    <input type="number" dir="ltr" placeholder="0.00"
-                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                      value={advanceVisa} onChange={(e) => setAdvanceVisa(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('wallet')}</label>
-                    <input type="number" dir="ltr" placeholder="0.00"
-                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                      value={advanceWallet} onChange={(e) => setAdvanceWallet(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('instapay')}</label>
-                    <input type="number" dir="ltr" placeholder="0.00"
-                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
-                      value={advanceInstapay} onChange={(e) => setAdvanceInstapay(e.target.value)}
-                    />
-                  </div>
+                  {activePayKeys.map((k) => (
+                    <div key={k}>
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel(k)}</label>
+                      <input type="number" dir="ltr" placeholder="0.00"
+                        className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                        value={advancePay[k] || ''} onChange={(e) => setAdvance(k, e.target.value)}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2872,19 +2788,14 @@ export default function POS() {
 
               {/* Payment Inputs Grid */}
               <div className="grid grid-cols-2 gap-4">
-                {[
-                  { id: 'cash', label: 'كاش', val: paidCash, set: setPaidCash, icon: <Banknote size={18} />, color: 'indigo' },
-                  { id: 'visa', label: 'فيزا', val: paidVisa, set: setPaidVisa, icon: <CreditCard size={18} />, color: 'blue' },
-                  { id: 'wallet', label: 'محفظة', val: paidWallet, set: setPaidWallet, icon: <Smartphone size={18} />, color: 'emerald' },
-                  { id: 'insta', label: 'انستا', val: paidInstapay, set: setPaidInstapay, icon: <Zap size={18} />, color: 'orange' }
-                ].map((p) => (
-                  <div key={p.id} className="space-y-1.5">
+                {activePayKeys.map((k, idx) => (
+                  <div key={k} className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-1 flex items-center gap-1.5">
-                      {p.icon} {p.label}
+                      {k === 'cash' ? <Banknote size={18} /> : k === 'visa' ? <CreditCard size={18} /> : k === 'wallet' ? <Smartphone size={18} /> : k === 'instapay' ? <Zap size={18} /> : <Wallet size={18} />} {payLabel(k)}
                     </label>
                     <input
-                      autoFocus={p.id === 'cash'}
-                      type="number" dir="ltr" value={p.val} onChange={(e) => p.set(e.target.value)} placeholder="0.00"
+                      autoFocus={idx === 0}
+                      type="number" dir="ltr" value={payInput[k] || ''} onChange={(e) => setPay(k, e.target.value)} placeholder="0.00"
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCheckoutClick(shouldPrint); } }}
                       className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-indigo-500 py-3 px-4 rounded-2xl focus:outline-none transition-all font-black text-lg text-left shadow-inner"
                     />
@@ -2897,29 +2808,29 @@ export default function POS() {
                 <div className="text-right">
                   <span className="text-[10px] text-slate-400 block font-bold uppercase">إجمالي المدفوع</span>
                   <span className="text-lg font-black text-slate-700 dark:text-slate-200">
-                    {(parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0')).toFixed(2)}
+                    {paidTotal.toFixed(2)}
                   </span>
                 </div>
-                
+
                 <div className="flex gap-6">
                   <div className="text-center">
                     <span className="text-[10px] text-slate-400 block font-bold uppercase">المتبقي (آجل)</span>
-                    <span className={`text-lg font-black ${total - (parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0')) > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                      {Math.max(0, total - (parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0'))).toFixed(2)}
+                    <span className={`text-lg font-black ${total - paidTotal > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                      {Math.max(0, total - paidTotal).toFixed(2)}
                     </span>
                   </div>
 
                   <div className="text-left">
                     <span className="text-[10px] text-slate-400 block font-bold uppercase">الباقي (للعميل)</span>
-                    <span className={`text-lg font-black ${(parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0')) - total > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
-                      {Math.max(0, (parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0')) - total).toFixed(2)}
+                    <span className={`text-lg font-black ${paidTotal - total > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+                      {Math.max(0, paidTotal - total).toFixed(2)}
                     </span>
                   </div>
                 </div>
               </div>
 
               {/* Deferred Note Input */}
-              {Math.max(0, total - (parseFloat(paidCash || '0') + parseFloat(paidVisa || '0') + parseFloat(paidWallet || '0') + parseFloat(paidInstapay || '0'))) > 0 && (
+              {Math.max(0, total - paidTotal) > 0 && (
                 <div className="mt-4">
                   <label className="text-sm font-bold text-slate-600 dark:text-slate-300 block mb-2 flex items-center gap-2">
                     <FileText size={16} />
