@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { Handshake, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, Edit2 } from 'lucide-react';
+import { activePaymentKeys, payLabelOf } from '../../utils/paymentMethods';
 
-const METHODS = [
-  { key: 'cash', label: 'كاش' },
-  { key: 'visa', label: 'فيزا' },
-  { key: 'wallet', label: 'محفظة' },
-  { key: 'instapay', label: 'انستا باي' },
-];
 const TREASURIES = [
   { key: 'shop', label: 'خزنة المحل' },
   { key: 'main', label: 'الخزنة الأساسية' },
@@ -16,6 +11,7 @@ const TREASURIES = [
 export default function Partners() {
   const { storeSettings, recordPartnerTransaction } = useStore();
   const cur = storeSettings.currency;
+  const METHODS = activePaymentKeys(storeSettings as any).map((k) => ({ key: k, label: payLabelOf(storeSettings as any, k) }));
   const input = 'w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none';
 
   const [partners, setPartners] = useState<any[]>([]);

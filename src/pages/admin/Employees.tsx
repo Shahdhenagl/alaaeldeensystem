@@ -6,6 +6,7 @@ import {
   Wallet, Landmark, CreditCard, Zap, Phone,
   DollarSign, Briefcase, ArrowRight, FileText, CalendarDays, Gift, UserCheck, UserX, Download
 } from 'lucide-react';
+import { activePaymentKeys, payLabelOf, primaryMethod as primaryMethod_ } from '../../utils/paymentMethods';
 
 export default function Employees() {
   const {
@@ -14,6 +15,7 @@ export default function Employees() {
     updateEmployeeTransaction, deleteEmployeeTransaction,
     addEmployeeLeave, updateEmployeeLeave, deleteEmployeeLeave
   } = useStore();
+  const payKeys = activePaymentKeys(storeSettings as any);
 
   // إجمالي مبيعات محاسب (المرتبط بموظف) في شهر معيّن (YYYY-MM).
   // مبيعات الموظف كبائع (salesperson) لهذا الشهر + الأرباح المحققة — لحساب العمولة.
@@ -62,12 +64,14 @@ export default function Employees() {
     is_active: true
   });
 
-  const [transFormData, setTransFormData] = useState({
+  const [transFormData, setTransFormData] = useState<Record<string, string>>({
     amount: '',
     paid_cash: '',
     paid_visa: '',
     paid_wallet: '',
     paid_instapay: '',
+    paid_method5: '',
+    paid_method6: '',
     month: new Date().toISOString().slice(0, 7),
     dedDays: '',
     dedAmount: '',
@@ -346,6 +350,8 @@ export default function Employees() {
         paid_visa: (transaction.paid_visa || 0).toString(),
         paid_wallet: (transaction.paid_wallet || 0).toString(),
         paid_instapay: (transaction.paid_instapay || 0).toString(),
+        paid_method5: ((transaction as any).paid_method5 || 0).toString(),
+        paid_method6: ((transaction as any).paid_method6 || 0).toString(),
         month: transaction.month,
         dedDays: '',
         dedAmount: (transaction.deductions || 0).toString(),
@@ -388,31 +394,25 @@ export default function Employees() {
   };
 
   const handleTransSubmit = async () => {
-    const cash = parseFloat(transFormData.paid_cash) || 0;
-    const visa = parseFloat(transFormData.paid_visa) || 0;
-    const wallet = parseFloat(transFormData.paid_wallet) || 0;
-    const insta = parseFloat(transFormData.paid_instapay) || 0;
-    const total = cash + visa + wallet + insta;
+    const split: Record<string, number> = {};
+    payKeys.forEach((k) => { split[k] = parseFloat((transFormData as any)['paid_' + k]) || 0; });
+    const total = payKeys.reduce((s, k) => s + split[k], 0);
 
     if (total <= 0) return alert('يرجى إدخال مبلغ صحيح');
 
-    const paymentMethod = cash >= visa && cash >= wallet && cash >= insta
-      ? 'cash'
-      : visa >= wallet && visa >= insta
-        ? 'visa'
-        : wallet >= insta
-          ? 'wallet'
-          : 'instapay';
+    const paymentMethod = primaryMethod_(split);
 
     const transactionData = {
       employee_id: selectedEmployee!.id,
       amount: total,
       type: transType,
-      payment_method: paymentMethod as 'cash' | 'visa' | 'wallet' | 'instapay',
-      paid_cash: cash,
-      paid_visa: visa,
-      paid_wallet: wallet,
-      paid_instapay: insta,
+      payment_method: paymentMethod as any,
+      paid_cash: split.cash || 0,
+      paid_visa: split.visa || 0,
+      paid_wallet: split.wallet || 0,
+      paid_instapay: split.instapay || 0,
+      paid_method5: split.method5 || 0,
+      paid_method6: split.method6 || 0,
       month: transFormData.month,
       deductions: (parseFloat(transFormData.dedAmount) || 0) + ((parseFloat(transFormData.dedDays) || 0) * (selectedEmployee!.monthly_salary / 30)),
       note: transFormData.note
@@ -1305,22 +1305,12 @@ export default function Employees() {
               <div className="space-y-4">
                 <p className="text-sm font-bold text-slate-700 border-b border-slate-100 pb-2">تفاصيل الدفع (طرق الدفع)</p>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">كاش</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-bold" value={transFormData.paid_cash} onChange={e => setTransFormData({...transFormData, paid_cash: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">فيزا</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-bold" value={transFormData.paid_visa} onChange={e => setTransFormData({...transFormData, paid_visa: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">محفظة</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-bold" value={transFormData.paid_wallet} onChange={e => setTransFormData({...transFormData, paid_wallet: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">انستا باي</label>
-                    <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-bold" value={transFormData.paid_instapay} onChange={e => setTransFormData({...transFormData, paid_instapay: e.target.value})} />
-                  </div>
+                  {payKeys.map((k) => (
+                    <div key={k}>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">{payLabelOf(storeSettings as any, k)}</label>
+                      <input type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none font-bold" value={(transFormData as any)['paid_' + k] || ''} onChange={e => setTransFormData({ ...transFormData, ['paid_' + k]: e.target.value })} />
+                    </div>
+                  ))}
                 </div>
               </div>
 

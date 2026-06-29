@@ -1,17 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { Briefcase, Plus, Banknote } from 'lucide-react';
-
-const METHODS = [
-  { key: 'cash', label: 'كاش' },
-  { key: 'visa', label: 'فيزا' },
-  { key: 'wallet', label: 'محفظة' },
-  { key: 'instapay', label: 'انستا باي' },
-] as const;
+import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../../utils/paymentMethods';
 
 export default function Managers() {
   const { orders, storeSettings, managerWithdraw } = useStore();
   const cur = storeSettings.currency;
+  const METHODS = activePaymentKeys(storeSettings as any).map((k) => ({ key: k, label: payLabelOf(storeSettings as any, k) }));
 
   const [managers, setManagers] = useState<{ id: string; name: string }[]>([]);
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
@@ -38,10 +33,12 @@ export default function Managers() {
       setWithdrawals(expenses.filter((e) => e.category === 'سحب مدير').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
 
       // الرصيد المتاح في كل وسيلة دفع (كل الفترات).
-      const net: Record<string, number> = { cash: 0, visa: 0, wallet: 0, instapay: 0 };
+      const net: Record<string, number> = {};
+      ALL_PAYMENT_KEYS.forEach((k) => { net[k] = 0; });
       const add = (sign: number, rec: any, field: string, mOverride?: string) => {
-        const c = +rec.paid_cash || 0, v = +rec.paid_visa || 0, w = +rec.paid_wallet || 0, i = +rec.paid_instapay || 0;
-        if (c + v + w + i > 0) { net.cash += sign * c; net.visa += sign * v; net.wallet += sign * w; net.instapay += sign * i; return; }
+        const vals = ALL_PAYMENT_KEYS.map((k) => +rec['paid_' + k] || 0);
+        const sum = vals.reduce((a, b) => a + b, 0);
+        if (sum > 0) { ALL_PAYMENT_KEYS.forEach((k, idx) => { net[k] += sign * vals[idx]; }); return; }
         const a = Math.abs(+rec[field] || 0);
         const m = mOverride || rec.payment_method || 'cash';
         if (net[m] !== undefined) net[m] += sign * a;
@@ -55,7 +52,7 @@ export default function Managers() {
         const amt = Number(e.amount) || 0;
         if (amt < 0) {
           // مصروف بمبلغ سالب = إيراد مسجّل يدوياً (داخل للخزنة) مش خارج منها
-          add(1, { ...e, amount: Math.abs(amt), paid_cash: Math.abs(+e.paid_cash || 0), paid_visa: Math.abs(+e.paid_visa || 0), paid_wallet: Math.abs(+e.paid_wallet || 0), paid_instapay: Math.abs(+e.paid_instapay || 0) }, 'amount');
+          { const absRec: any = { ...e, amount: Math.abs(amt) }; ALL_PAYMENT_KEYS.forEach((k) => { absRec['paid_' + k] = Math.abs(+e['paid_' + k] || 0); }); add(1, absRec, 'amount'); }
         } else {
           add(-1, e, 'amount');
         }
@@ -79,8 +76,9 @@ export default function Managers() {
 
   const submitWithdraw = async () => {
     if (!selManager) { alert('اختر المدير'); return; }
-    const split = { cash: +amt.cash || 0, visa: +amt.visa || 0, wallet: +amt.wallet || 0, instapay: +amt.instapay || 0 };
-    const total = split.cash + split.visa + split.wallet + split.instapay;
+    const split: Record<string, number> = {};
+    ALL_PAYMENT_KEYS.forEach((k) => { split[k] = +amt[k] || 0; });
+    const total = ALL_PAYMENT_KEYS.reduce((s, k) => s + split[k], 0);
     if (total <= 0) { alert('أدخل مبلغاً للسحب'); return; }
     for (const m of METHODS) {
       if ((split as any)[m.key] > (avail[m.key] || 0) + 0.001) {
@@ -89,11 +87,11 @@ export default function Managers() {
       }
     }
     setSaving(true);
-    const ok = await managerWithdraw(selManager, split);
+    const ok = await managerWithdraw(selManager, split as any);
     setSaving(false);
     if (ok) {
       alert('تم تسجيل السحب وخصمه من الخزنة ✅');
-      setAmt({ cash: '', visa: '', wallet: '', instapay: '' });
+      setAmt({});
       load();
     }
   };
@@ -112,7 +110,7 @@ export default function Managers() {
       {/* إجمالي الخزنة الحقيقي */}
       <div className="bg-gradient-to-l from-indigo-600 to-purple-600 text-white rounded-2xl p-5 flex items-center justify-between">
         <span className="text-sm font-bold opacity-90">إجمالي المتاح بالخزنة (كل الوسائل)</span>
-        <span className="text-2xl font-black">{(avail.cash + avail.visa + avail.wallet + avail.instapay).toFixed(2)} {cur}</span>
+        <span className="text-2xl font-black">{METHODS.reduce((s, m) => s + (avail[m.key] || 0), 0).toFixed(2)} {cur}</span>
       </div>
 
       {/* المتاح في كل وسيلة */}
@@ -144,12 +142,12 @@ export default function Managers() {
             {METHODS.map((m) => (
               <div key={m.key}>
                 <label className="text-[11px] font-bold text-slate-500">{m.label} <span className="text-slate-400">(متاح {(avail[m.key] || 0).toFixed(0)})</span></label>
-                <input className={inputCls} type="number" min="0" placeholder="0" value={amt[m.key]} onChange={(e) => setAmt((a) => ({ ...a, [m.key]: e.target.value }))} />
+                <input className={inputCls} type="number" min="0" placeholder="0" value={amt[m.key] || ''} onChange={(e) => setAmt((a) => ({ ...a, [m.key]: e.target.value }))} />
               </div>
             ))}
           </div>
           <div className="text-center font-black text-slate-700 dark:text-slate-200">
-            الإجمالي: {((+amt.cash || 0) + (+amt.visa || 0) + (+amt.wallet || 0) + (+amt.instapay || 0)).toFixed(2)} {cur}
+            الإجمالي: {METHODS.reduce((s, m) => s + (+amt[m.key] || 0), 0).toFixed(2)} {cur}
           </div>
           <button onClick={submitWithdraw} disabled={saving} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black py-3 rounded-xl transition">
             {saving ? 'جاري التسجيل...' : 'تأكيد السحب وخصمه من الخزنة'}

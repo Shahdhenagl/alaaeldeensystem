@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import type { Order, OrderItem, Product } from '../store/useStore';
 import { printDocument } from '../utils/printWindow';
 import { escapeHtml } from '../utils/escapeHtml';
+import { activePaymentKeys, payLabelOf, primaryMethod as primaryMethod_ } from '../utils/paymentMethods';
 
 interface EditInvoiceModalProps {
   invoice: Order;
@@ -23,10 +24,13 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
   const [cart, setCart] = useState<OrderItem[]>([...invoice.items]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [paidCash, setPaidCash] = useState<number>(invoice.paid_cash || (invoice.payment_method === 'cash' ? invoice.paid_amount : 0));
-  const [paidVisa, setPaidVisa] = useState<number>(invoice.paid_visa || (invoice.payment_method === 'visa' ? invoice.paid_amount : 0));
-  const [paidWallet, setPaidWallet] = useState<number>(invoice.paid_wallet || (invoice.payment_method === 'wallet' ? invoice.paid_amount : 0));
-  const [paidInstapay, setPaidInstapay] = useState<number>(invoice.paid_instapay || (invoice.payment_method === 'instapay' ? invoice.paid_amount : 0));
+  const payKeys = activePaymentKeys(storeSettings as any);
+  const [pay, setPay] = useState<Record<string, number>>(() => {
+    const p: Record<string, number> = {};
+    payKeys.forEach((k) => { p[k] = (invoice as any)['paid_' + k] || (invoice.payment_method === k ? invoice.paid_amount : 0); });
+    return p;
+  });
+  const setPayVal = (k: string, v: number) => setPay((s) => ({ ...s, [k]: v }));
   const [settleMethod, setSettleMethod] = useState<string>(invoice.payment_method || 'cash');
 
   const [reason, setReason] = useState('');
@@ -34,16 +38,11 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
   const [error, setError] = useState('');
 
   const total = cart.reduce((sum, item) => sum + (item.quantity * (item.sale_price || 0)), 0);
-  const paidAmount = paidCash + paidVisa + paidWallet + paidInstapay;
+  const paidAmount = payKeys.reduce((s, k) => s + (pay[k] || 0), 0);
   const debt = Math.max(0, total - paidAmount);
 
   // Determine main payment method
-  let paymentMethod = invoice.payment_method;
-  if (paidCash > 0 && paidVisa === 0 && paidWallet === 0 && paidInstapay === 0) paymentMethod = 'cash';
-  else if (paidVisa > 0 && paidCash === 0 && paidWallet === 0 && paidInstapay === 0) paymentMethod = 'visa';
-  else if (paidWallet > 0 && paidCash === 0 && paidVisa === 0 && paidInstapay === 0) paymentMethod = 'wallet';
-  else if (paidInstapay > 0 && paidCash === 0 && paidVisa === 0 && paidWallet === 0) paymentMethod = 'instapay';
-  else if (paidAmount > 0) paymentMethod = invoice.payment_method;
+  const paymentMethod = paidAmount > 0 ? primaryMethod_(pay) : invoice.payment_method;
 
   const filteredProducts = useMemo(() => {
     if (!searchQuery) return [];
@@ -89,7 +88,7 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
 
   // فرق الاستبدال: موجب = نحصّل من العميل، سالب = نرجّع للعميل
   const settleAmount = total - oldPaid;
-  const methodLabelOf = (m: string) => m === 'cash' ? 'كاش' : m === 'visa' ? 'فيزا' : m === 'wallet' ? 'محفظة' : 'انستا باي';
+  const methodLabelOf = (m: string) => payLabelOf(storeSettings as any, m);
 
   const printExchangeReceipt = () => {
     const cur = storeSettings.currency;
@@ -167,11 +166,12 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
     if (exchangeMode) {
       // الاستبدال: نُبقي تقسيمة الدفع الأصلية كما هي (مسجّلة في يومها)، ونسجّل الفرق
       // كمعاملة مالية منفصلة بتاريخ اليوم → لا ازدواج في الحسابات.
-      const base: Record<string, number> = { cash: invoice.paid_cash || 0, visa: invoice.paid_visa || 0, wallet: invoice.paid_wallet || 0, instapay: invoice.paid_instapay || 0 };
-      if (base.cash + base.visa + base.wallet + base.instapay === 0) base[invoice.payment_method || 'cash'] = oldPaid;
-      updatedData = { total, paid_amount: total, paid_cash: base.cash, paid_visa: base.visa, paid_wallet: base.wallet, paid_instapay: base.instapay, payment_method: invoice.payment_method as any };
+      const base: Record<string, number> = {};
+      payKeys.forEach((k) => { base[k] = (invoice as any)['paid_' + k] || 0; });
+      if (payKeys.reduce((s, k) => s + base[k], 0) === 0) base[invoice.payment_method || 'cash'] = oldPaid;
+      updatedData = { total, paid_amount: total, paid_cash: base.cash || 0, paid_visa: base.visa || 0, paid_wallet: base.wallet || 0, paid_instapay: base.instapay || 0, paid_method5: base.method5 || 0, paid_method6: base.method6 || 0, payment_method: invoice.payment_method as any };
     } else {
-      updatedData = { total, paid_amount: paidAmount, paid_cash: paidCash, paid_visa: paidVisa, paid_wallet: paidWallet, paid_instapay: paidInstapay, payment_method: paymentMethod as any };
+      updatedData = { total, paid_amount: paidAmount, paid_cash: pay.cash || 0, paid_visa: pay.visa || 0, paid_wallet: pay.wallet || 0, paid_instapay: pay.instapay || 0, paid_method5: pay.method5 || 0, paid_method6: pay.method6 || 0, payment_method: paymentMethod as any };
     }
 
     const success = await editOrder(invoice.id, updatedData, cart, reason);
@@ -182,13 +182,14 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
         if (Math.abs(settleAmount) >= 0.01) {
           const m = settleMethod;
           const amt = Math.abs(settleAmount);
-          const sp = { cash: m === 'cash' ? amt : 0, visa: m === 'visa' ? amt : 0, wallet: m === 'wallet' ? amt : 0, instapay: m === 'instapay' ? amt : 0 };
+          const sp: Record<string, number> = {};
+          payKeys.forEach((k) => { sp[k] = m === k ? amt : 0; });
           await addExpense({
             category: 'فرق استبدال مبيعات',
             amount: settleAmount > 0 ? -amt : amt, // تحصيل = إيراد (سالب) / رد = مصروف (موجب)
             note: `فرق استبدال ${settleAmount > 0 ? '(تحصيل لينا)' : '(مصروف رد للعميل)'} — فاتورة #${invoice.id}`,
             payment_method: m,
-            paid_cash: sp.cash, paid_visa: sp.visa, paid_wallet: sp.wallet, paid_instapay: sp.instapay,
+            paid_cash: sp.cash || 0, paid_visa: sp.visa || 0, paid_wallet: sp.wallet || 0, paid_instapay: sp.instapay || 0, paid_method5: sp.method5 || 0, paid_method6: sp.method6 || 0,
           } as any);
         }
         await markOrderExchanged(invoice.id, {
@@ -340,7 +341,7 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
                       <div>
                         <label className="block text-sm font-bold text-slate-600 mb-1">{settleAmount > 0 ? 'طريقة تحصيل الفرق' : 'طريقة رد الفلوس للعميل'}</label>
                         <select value={settleMethod} onChange={(e) => setSettleMethod(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold">
-                          <option value="cash">كاش</option><option value="visa">فيزا</option><option value="wallet">محفظة</option><option value="instapay">انستا باي</option>
+                          {payKeys.map((k) => <option key={k} value={k}>{payLabelOf(storeSettings as any, k)}</option>)}
                         </select>
                       </div>
                     </>
@@ -348,22 +349,12 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
                 </div>
               ) : (
               <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <label className="w-24 text-sm font-medium text-slate-600">كاش:</label>
-                  <input type="number" min="0" value={paidCash || ''} onChange={(e) => setPaidCash(Number(e.target.value))} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="0" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="w-24 text-sm font-medium text-slate-600">فيزا:</label>
-                  <input type="number" min="0" value={paidVisa || ''} onChange={(e) => setPaidVisa(Number(e.target.value))} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="0" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="w-24 text-sm font-medium text-slate-600">محفظة:</label>
-                  <input type="number" min="0" value={paidWallet || ''} onChange={(e) => setPaidWallet(Number(e.target.value))} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="0" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="w-24 text-sm font-medium text-slate-600">انستا باي:</label>
-                  <input type="number" min="0" value={paidInstapay || ''} onChange={(e) => setPaidInstapay(Number(e.target.value))} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="0" />
-                </div>
+                {payKeys.map((k) => (
+                  <div key={k} className="flex items-center gap-3">
+                    <label className="w-24 text-sm font-medium text-slate-600">{payLabelOf(storeSettings as any, k)}:</label>
+                    <input type="number" min="0" value={pay[k] || ''} onChange={(e) => setPayVal(k, Number(e.target.value))} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="0" />
+                  </div>
+                ))}
               </div>
               )}
 

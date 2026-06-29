@@ -1,20 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../../store/useStore';
 import { PiggyBank, ArrowLeftRight } from 'lucide-react';
-
-const METHODS = [
-  { key: 'cash', label: 'كاش' },
-  { key: 'visa', label: 'فيزا' },
-  { key: 'wallet', label: 'محفظة' },
-  { key: 'instapay', label: 'انستا باي' },
-] as const;
+import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../../utils/paymentMethods';
 
 type Split = Record<string, number>;
-const zero = (): Split => ({ cash: 0, visa: 0, wallet: 0, instapay: 0 });
+const zero = (): Split => { const z: Split = {}; ALL_PAYMENT_KEYS.forEach((k) => { z[k] = 0; }); return z; };
 
 export default function Savings() {
   const { orders, storeSettings, savingsTransfer } = useStore();
   const cur = storeSettings.currency;
+  const METHODS = activePaymentKeys(storeSettings as any).map((k) => ({ key: k, label: payLabelOf(storeSettings as any, k) }));
   const input = 'w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none';
 
   const [shopAvail, setShopAvail] = useState<Split>(zero());
@@ -42,10 +37,11 @@ export default function Savings() {
       // خزنة المحل المتاح لكل وسيلة (كل الفترات)
       const net = zero();
       const add = (sign: number, rec: any, field: string) => {
-        const c = +rec.paid_cash || 0, v = +rec.paid_visa || 0, w = +rec.paid_wallet || 0, i = +rec.paid_instapay || 0;
-        if (c + v + w + i > 0) { net.cash += sign * c; net.visa += sign * v; net.wallet += sign * w; net.instapay += sign * i; return; }
+        const vals = ALL_PAYMENT_KEYS.map((k) => +rec['paid_' + k] || 0);
+        const sum = vals.reduce((a, b) => a + b, 0);
+        if (sum > 0) { ALL_PAYMENT_KEYS.forEach((k, idx) => { net[k] += sign * vals[idx]; }); return; }
         const a = Math.abs(+rec[field] || 0);
-        const m = ['cash', 'visa', 'wallet', 'instapay'].includes(rec.payment_method) ? rec.payment_method : 'cash';
+        const m = (ALL_PAYMENT_KEYS as readonly string[]).includes(rec.payment_method) ? rec.payment_method : 'cash';
         net[m] += sign * a;
       };
       orders.filter((o: any) => !o.is_deleted).forEach((o: any) => {
@@ -55,7 +51,7 @@ export default function Savings() {
       });
       (expRes.data || []).forEach((e: any) => {
         const amount = Number(e.amount) || 0;
-        if (amount < 0) add(1, { ...e, amount: Math.abs(amount), paid_cash: Math.abs(+e.paid_cash || 0), paid_visa: Math.abs(+e.paid_visa || 0), paid_wallet: Math.abs(+e.paid_wallet || 0), paid_instapay: Math.abs(+e.paid_instapay || 0) }, 'amount');
+        if (amount < 0) { const absRec: any = { ...e, amount: Math.abs(amount) }; ALL_PAYMENT_KEYS.forEach((k) => { absRec['paid_' + k] = Math.abs(+e['paid_' + k] || 0); }); add(1, absRec, 'amount'); }
         else add(-1, e, 'amount');
       });
       (purRes.data || []).forEach((p: any) => add(-1, p, 'paid_amount'));
@@ -78,7 +74,7 @@ export default function Savings() {
   const total = METHODS.reduce((s, m) => s + (Number(amt[m.key]) || 0), 0);
   const savingsTotal = METHODS.reduce((s, m) => s + (savingsBal[m.key] || 0), 0);
 
-  const fillAll = () => setAmt({ cash: String(Math.max(0, cap.cash) || ''), visa: String(Math.max(0, cap.visa) || ''), wallet: String(Math.max(0, cap.wallet) || ''), instapay: String(Math.max(0, cap.instapay) || '') });
+  const fillAll = () => { const next: Record<string, string> = {}; METHODS.forEach((m) => { next[m.key] = String(Math.max(0, cap[m.key] || 0) || ''); }); setAmt(next); };
 
   const detailsText = () => {
     const lines = METHODS.filter((m) => (Number(amt[m.key]) || 0) > 0).map((m) => `${m.label}: ${Number(amt[m.key]).toFixed(2)}`);
@@ -120,9 +116,10 @@ export default function Savings() {
       const r = await fetch('/api/wholesale-otp', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) }, body: JSON.stringify({ action: 'verify', purpose: 'savings', code: otpInput.trim() }) });
       const j = await r.json();
       if (!j.ok) { alert(j.error || 'رمز غير صحيح'); setBusy(false); return; }
-      const split = { cash: Number(amt.cash) || 0, visa: Number(amt.visa) || 0, wallet: Number(amt.wallet) || 0, instapay: Number(amt.instapay) || 0 };
-      const ok = await savingsTransfer(split, direction, direction === 'in' ? 'shop_transfer' : 'to_shop', note.trim());
-      if (ok) { alert('تم التحويل ✅'); setAmt({ cash: '', visa: '', wallet: '', instapay: '' }); setNote(''); setOtpInput(''); setOtpSent(false); load(); }
+      const split: Record<string, number> = {};
+      ALL_PAYMENT_KEYS.forEach((k) => { split[k] = Number(amt[k]) || 0; });
+      const ok = await savingsTransfer(split as any, direction, direction === 'in' ? 'shop_transfer' : 'to_shop', note.trim());
+      if (ok) { alert('تم التحويل ✅'); setAmt({}); setNote(''); setOtpInput(''); setOtpSent(false); load(); }
     } catch { alert('تعذّر تنفيذ التحويل'); }
     setBusy(false);
   };
@@ -163,7 +160,7 @@ export default function Savings() {
           {METHODS.map((m) => (
             <div key={m.key}>
               <label className="text-[11px] font-bold text-slate-500">{m.label} <span className="text-slate-400">(متاح {(cap[m.key] || 0).toFixed(0)})</span></label>
-              <input className={input} type="number" min="0" placeholder="0" value={amt[m.key]} onChange={(e) => { setAmt((a) => ({ ...a, [m.key]: e.target.value })); setOtpSent(false); }} />
+              <input className={input} type="number" min="0" placeholder="0" value={amt[m.key] || ''} onChange={(e) => { setAmt((a) => ({ ...a, [m.key]: e.target.value })); setOtpSent(false); }} />
             </div>
           ))}
         </div>
