@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { unitMinQty, unitStep } from '../utils/units';
+import { setQzConfig } from '../utils/qzPrint';
+
+// Keep the QZ Tray printer module in sync with the latest store settings.
+function syncQzConfig(s: StoreSettings) {
+  setQzConfig({
+    enabled: !!s.qzEnabled,
+    invoicePrinter: s.qzInvoicePrinter || '',
+    barcodePrinter: s.qzBarcodePrinter || '',
+  });
+}
 
 // Effective unit price for the current invoice type (retail / half-wholesale / wholesale).
 function priceForType(product: any, type: string): number {
@@ -267,6 +277,10 @@ export interface StoreSettings {
   cashierPermissions?: Record<string, boolean>; // صلاحيات الكاشير (إظهار/إخفاء مميزات)
   paymentLabels?: Record<string, string>; // تسميات وسائل الدفع (كاش/فيزا/محفظة/انستا)
   showInvoiceProfit?: boolean; // إظهار ربح الفاتورة في شاشة الكاشير
+  allowCashierEmployeeAdvance?: boolean; // السماح للكاشير بصرف سلف للموظفين (افتراضياً مغلق)
+  qzEnabled?: boolean; // تفعيل الطباعة المباشرة عبر QZ Tray
+  qzInvoicePrinter?: string; // اسم طابعة الفواتير الحرارية
+  qzBarcodePrinter?: string; // اسم طابعة ملصقات الباركود
 }
 
 export interface Employee {
@@ -599,6 +613,10 @@ function mapSettings(row: Record<string, unknown>): StoreSettings {
     cashierPermissions: (row.cashier_permissions as Record<string, boolean>) ?? undefined,
     paymentLabels: (row.payment_labels as Record<string, string>) ?? undefined,
     showInvoiceProfit: (row.show_invoice_profit as boolean) ?? true,
+    allowCashierEmployeeAdvance: (row.allow_cashier_employee_advance as boolean) ?? false,
+    qzEnabled: (row.qz_enabled as boolean) ?? false,
+    qzInvoicePrinter: (row.qz_invoice_printer as string) ?? '',
+    qzBarcodePrinter: (row.qz_barcode_printer as string) ?? '',
   };
 }
 
@@ -711,6 +729,10 @@ export const useStore = create<CashierStore>((set, get) => ({
     whatsappCountryCode: '2',
     initial_balance: 0,
     locationUrl: '',
+    allowCashierEmployeeAdvance: false,
+    qzEnabled: false,
+    qzInvoicePrinter: '',
+    qzBarcodePrinter: '',
   },
   products: [],
   categories: [],
@@ -890,6 +912,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         ]);
 
       const settings = settingsRes.data ? mapSettings(settingsRes.data as Record<string, unknown>) : get().storeSettings;
+      syncQzConfig(settings);
 
       const customers: Customer[] = ((customersRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
         id: c.id as string,
@@ -1046,7 +1069,9 @@ export const useStore = create<CashierStore>((set, get) => ({
     try {
       const { data } = await supabase.from('store_settings').select('*').limit(1).maybeSingle();
       if (data) {
-        set({ storeSettings: mapSettings(data as Record<string, unknown>) });
+        const mapped = mapSettings(data as Record<string, unknown>);
+        syncQzConfig(mapped);
+        set({ storeSettings: mapped });
       }
     } catch(e) { console.error(e); }
   },
@@ -2572,6 +2597,10 @@ export const useStore = create<CashierStore>((set, get) => ({
     if (newSettings.cashierPermissions !== undefined) mapped.cashier_permissions = newSettings.cashierPermissions;
     if (newSettings.paymentLabels !== undefined) mapped.payment_labels = newSettings.paymentLabels;
     if (newSettings.showInvoiceProfit !== undefined) mapped.show_invoice_profit = newSettings.showInvoiceProfit;
+    if (newSettings.allowCashierEmployeeAdvance !== undefined) mapped.allow_cashier_employee_advance = newSettings.allowCashierEmployeeAdvance;
+    if (newSettings.qzEnabled !== undefined) mapped.qz_enabled = newSettings.qzEnabled;
+    if (newSettings.qzInvoicePrinter !== undefined) mapped.qz_invoice_printer = newSettings.qzInvoicePrinter;
+    if (newSettings.qzBarcodePrinter !== undefined) mapped.qz_barcode_printer = newSettings.qzBarcodePrinter;
 
     const { data: existing } = await supabase.from('store_settings').select('id').limit(1).maybeSingle();
     
@@ -2582,6 +2611,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     }
     
     set((state) => ({ storeSettings: { ...state.storeSettings, ...newSettings } }));
+    syncQzConfig(get().storeSettings);
     new BroadcastChannel('cashier-sync').postMessage('sync_settings');
   },
 

@@ -5,7 +5,7 @@ import { normalizeArabic } from '../../utils/textUtils';
 import { calculateInvoiceProfit } from '../../utils/invoiceProfit';
 import { calculateOrderReturnValue } from '../../utils/returns';
 import { escapeHtml } from '../../utils/escapeHtml';
-import { openPrintWindow } from '../../utils/printWindow';
+import { printDocument } from '../../utils/printWindow';
 import * as XLSX from 'xlsx';
 
 import jsPDF from 'jspdf';
@@ -206,7 +206,7 @@ export default function Invoices() {
 <script>window.onload=()=>{setTimeout(()=>{window.print();window.onafterprint=()=>window.close();},500);}</script>
 </body></html>`;
 
-    openPrintWindow(html);
+    void printDocument('invoice', html);
   };
 
   const handleSendWhatsApp = (order: any) => {

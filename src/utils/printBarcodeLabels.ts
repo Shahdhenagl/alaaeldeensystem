@@ -1,6 +1,6 @@
 import JsBarcode from 'jsbarcode';
 import { escapeHtml } from './escapeHtml';
-import { openPrintWindow } from './printWindow';
+import { printDocument } from './printWindow';
 
 // Generates a unique numeric barcode (12 digits). Pass existing codes to avoid collisions.
 export function generateBarcode(existing: Set<string> = new Set()): string {
@@ -68,5 +68,5 @@ export function printBarcodeLabels(opts: {
   <script>window.onload=function(){window.print();setTimeout(function(){window.close();},400);};<\/script>
   </body></html>`;
 
-  openPrintWindow(html);
+  void printDocument('barcode', html);
 }

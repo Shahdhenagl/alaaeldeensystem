@@ -1,9 +1,27 @@
 import { useState } from 'react';
 import { useStore } from '../../store/useStore';
+import { listPrinters } from '../../utils/qzPrint';
 
 export default function Settings() {
   const { storeSettings, updateSettings } = useStore();
   const [formData, setFormData] = useState(storeSettings);
+  const [printers, setPrinters] = useState<string[]>([]);
+  const [printerStatus, setPrinterStatus] = useState('');
+  const [discovering, setDiscovering] = useState(false);
+
+  const discoverPrinters = async () => {
+    setDiscovering(true);
+    setPrinterStatus('جارٍ الاتصال بـ QZ Tray واكتشاف الطابعات...');
+    try {
+      const found = await listPrinters();
+      setPrinters(found);
+      setPrinterStatus(found.length ? `تم العثور على ${found.length} طابعة ✅` : 'لم يتم العثور على طابعات.');
+    } catch {
+      setPrinterStatus('تعذّر الاتصال بـ QZ Tray. تأكد أن البرنامج مثبّت وقيد التشغيل على هذا الجهاز.');
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,6 +242,7 @@ export default function Settings() {
               ['dayClosing', 'تقفيل اليوم'],
               ['wholesale', 'أسعار الجملة / نص الجملة'],
               ['savings', 'تحويل لخزنة الادخار'],
+              ['barcodePrint', 'طباعة باركود المنتجات'],
             ] as const).map(([k, label]) => {
               const perms = formData.cashierPermissions || {};
               const enabled = perms[k] !== false; // الافتراضي مسموح
@@ -235,6 +254,10 @@ export default function Settings() {
               );
             })}
           </div>
+          <label className="mt-2 flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 cursor-pointer">
+            <span className="text-sm font-bold text-amber-800">السماح للكاشير بصرف سلف للموظفين (تُخصم من راتب الشهر)</span>
+            <input type="checkbox" checked={!!formData.allowCashierEmployeeAdvance} onChange={(e) => setFormData({ ...formData, allowCashierEmployeeAdvance: e.target.checked })} className="w-5 h-5 accent-amber-600" />
+          </label>
         </div>
 
         {/* ── إعدادات العرض ── */}
@@ -261,6 +284,55 @@ export default function Settings() {
               );
             })}
           </div>
+        </div>
+
+        {/* ── الطباعة المباشرة (QZ Tray) ── */}
+        <div className="pt-6 border-t border-slate-100">
+          <h2 className="text-lg font-black text-slate-800 mb-1">الطباعة المباشرة (QZ Tray)</h2>
+          <p className="text-slate-500 text-sm mb-4">طباعة الفواتير والباركود مباشرةً على الطابعة المحددة بدون نافذة طباعة. يتطلّب تثبيت برنامج <a href="https://qz.io/download/" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold underline">QZ Tray</a> (مجاني) مرة واحدة على جهاز الكاشير وتشغيله.</p>
+
+          <label className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 cursor-pointer mb-3">
+            <span className="text-sm font-bold text-slate-700">تفعيل الطباعة المباشرة عبر QZ Tray</span>
+            <input type="checkbox" checked={!!formData.qzEnabled} onChange={(e) => setFormData({ ...formData, qzEnabled: e.target.checked })} className="w-5 h-5 accent-indigo-600" />
+          </label>
+
+          {formData.qzEnabled && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button type="button" onClick={discoverPrinters} disabled={discovering} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold transition text-sm">
+                  {discovering ? 'جارٍ الاكتشاف...' : '🔍 اكتشاف الطابعات'}
+                </button>
+                {printerStatus && <span className="text-xs font-bold text-slate-500">{printerStatus}</span>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">🧾 طابعة الفواتير (الحرارية)</label>
+                  <input
+                    list="qz-printers"
+                    value={formData.qzInvoicePrinter || ''}
+                    onChange={(e) => setFormData({ ...formData, qzInvoicePrinter: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition font-bold"
+                    placeholder="اختر أو اكتب اسم الطابعة"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">🔳 طابعة الباركود (الملصقات)</label>
+                  <input
+                    list="qz-printers"
+                    value={formData.qzBarcodePrinter || ''}
+                    onChange={(e) => setFormData({ ...formData, qzBarcodePrinter: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition font-bold"
+                    placeholder="اختر أو اكتب اسم الطابعة"
+                  />
+                </div>
+              </div>
+              <datalist id="qz-printers">
+                {printers.map((p) => <option key={p} value={p} />)}
+              </datalist>
+              <p className="text-[11px] text-slate-400">لو طابعة واحدة فقط، اتركي الخانة الثانية فارغة وسيتم استخدام نافذة الطباعة العادية لها. أول طباعة قد تطلب الضغط على «Allow / السماح» في QZ Tray — فعّلي «Remember» لعدم تكرار السؤال.</p>
+            </div>
+          )}
         </div>
 
         <div className="pt-6 border-t border-slate-100 flex justify-end">

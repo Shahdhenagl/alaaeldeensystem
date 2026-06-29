@@ -2,16 +2,17 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, type Product } from '../store/useStore';
 import { EditInvoiceModal } from '../components/EditInvoiceModal';
-import { ShoppingCart, Search, Plus, Minus, Trash2, Banknote, RefreshCcw, Moon, Sun, ArrowRightLeft, X, Printer, CreditCard, Smartphone, Zap, ScanLine, Camera, Box, Check, ChevronRight, ChevronLeft, FileText, MessageSquare, Send, Wallet, Edit2, Eye } from 'lucide-react';
+import { ShoppingCart, Search, Plus, Minus, Trash2, Banknote, RefreshCcw, Moon, Sun, ArrowRightLeft, X, Printer, CreditCard, Smartphone, Zap, ScanLine, Camera, Box, Check, ChevronRight, ChevronLeft, FileText, MessageSquare, Send, Wallet, Edit2, Eye, HandCoins } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { normalizeArabic } from '../utils/textUtils';
+import { printBarcodeLabels, generateBarcode } from '../utils/printBarcodeLabels';
 import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 import { escapeHtml } from '../utils/escapeHtml';
-import { openPrintWindow } from '../utils/printWindow';
+import { printDocument } from '../utils/printWindow';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson, deleteOrder, savingsTransfer } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -117,7 +118,7 @@ export default function POS() {
       <div class="rem">المتبقي عليه: ${remaining.toFixed(2)} ${s.currency}</div>
       <div class="ft">شكراً لتعاملكم معنا</div>
     </div><script>window.onload=()=>{setTimeout(()=>{window.print();},400);}</script></body></html>`;
-    openPrintWindow(html);
+    void printDocument('invoice', html);
   };
 
   const submitDebtPayment = async () => {
@@ -479,6 +480,114 @@ export default function POS() {
   const [financeTransferTo, setFinanceTransferTo] = useState('cash');
   const [financeTransferAmount, setFinanceTransferAmount] = useState('');
   const [isSubmittingFinance, setIsSubmittingFinance] = useState(false);
+
+  // ── سلفة موظف (صرف سلفة تُخصم من راتب الشهر) ──
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceEmpId, setAdvanceEmpId] = useState('');
+  const [advanceCash, setAdvanceCash] = useState('');
+  const [advanceVisa, setAdvanceVisa] = useState('');
+  const [advanceWallet, setAdvanceWallet] = useState('');
+  const [advanceInstapay, setAdvanceInstapay] = useState('');
+  const [advanceNote, setAdvanceNote] = useState('');
+  const [isSubmittingAdvance, setIsSubmittingAdvance] = useState(false);
+  const canEmployeeAdvance = isMaster || !!(storeSettings as any).allowCashierEmployeeAdvance;
+  const advanceTotal = (parseFloat(advanceCash) || 0) + (parseFloat(advanceVisa) || 0) + (parseFloat(advanceWallet) || 0) + (parseFloat(advanceInstapay) || 0);
+
+  const resetAdvanceForm = () => {
+    setAdvanceEmpId(''); setAdvanceCash(''); setAdvanceVisa(''); setAdvanceWallet(''); setAdvanceInstapay(''); setAdvanceNote('');
+  };
+
+  // ── طباعة باركود منتج من الكاشير ──
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [barcodeSearch, setBarcodeSearch] = useState('');
+  const [barcodeProductId, setBarcodeProductId] = useState('');
+  const [barcodeCount, setBarcodeCount] = useState('1');
+  const canBarcodePrint = perm('barcodePrint');
+  const barcodeMatches = (() => {
+    const q = normalizeArabic(barcodeSearch.trim());
+    const list = q === ''
+      ? products
+      : products.filter((p) => normalizeArabic(p.name).includes(q) || (p.barcode && p.barcode.includes(barcodeSearch.trim())));
+    return list.slice(0, 30);
+  })();
+  const barcodeProduct = products.find((p) => p.id === barcodeProductId) || null;
+
+  const handlePrintBarcode = () => {
+    if (!barcodeProduct) { alert('يرجى اختيار منتج أولاً'); return; }
+    const n = Math.max(1, parseInt(barcodeCount) || 1);
+    let code = barcodeProduct.barcode || '';
+    if (!code) {
+      code = generateBarcode(new Set(products.map((p) => p.barcode).filter(Boolean) as string[]));
+      updateProduct(barcodeProduct.id, { barcode: code });
+    }
+    printBarcodeLabels({
+      name: barcodeProduct.name,
+      code,
+      price: barcodeProduct.sale_price,
+      discountPrice: (barcodeProduct as any).discount_price,
+      currency: storeSettings.currency,
+      count: n,
+      storeName: storeSettings.name,
+    });
+  };
+
+  const handleAdvanceSubmit = async () => {
+    if (!advanceEmpId) { alert('يرجى اختيار الموظف'); return; }
+    const cash = parseFloat(advanceCash) || 0;
+    const visa = parseFloat(advanceVisa) || 0;
+    const wallet = parseFloat(advanceWallet) || 0;
+    const insta = parseFloat(advanceInstapay) || 0;
+    const total = cash + visa + wallet + insta;
+    if (total <= 0) { alert('يرجى إدخال مبلغ السلفة أولاً'); return; }
+
+    const emp = employees.find((x: any) => x.id === advanceEmpId);
+    const paymentMethod = [
+      { name: 'cash', amount: cash }, { name: 'visa', amount: visa }, { name: 'wallet', amount: wallet }, { name: 'instapay', amount: insta }
+    ].sort((a, b) => b.amount - a.amount)[0].name as 'cash' | 'visa' | 'wallet' | 'instapay';
+    const actorName = activeCashier?.name || 'كاشير';
+
+    setIsSubmittingAdvance(true);
+    try {
+      // يسجّل السلفة (تُخصم تلقائياً من راتب الشهر) + يخصم المبلغ من الخزنة كمصروف رواتب
+      await addEmployeeTransaction({
+        employee_id: advanceEmpId,
+        amount: total,
+        type: 'advance',
+        payment_method: paymentMethod,
+        paid_cash: cash,
+        paid_visa: visa,
+        paid_wallet: wallet,
+        paid_instapay: insta,
+        month: new Date().toISOString().slice(0, 7),
+        deductions: 0,
+        note: (advanceNote ? `${advanceNote} - ` : '') + `سلفة بواسطة ${actorName}`,
+      });
+
+      // تنبيه المدير على تليجرام
+      fetch('/api/telegram-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'cashier_expense',
+          actor: actorName,
+          date: new Date().toISOString(),
+          amount: total,
+          description: `سلفة موظف: ${emp?.name || ''}`,
+          noteText: advanceNote || '',
+          paymentMethod: cash > 0 ? 'كاش' : visa > 0 ? 'فيزا' : wallet > 0 ? 'محفظة' : 'انستاباي'
+        })
+      }).catch(() => {});
+
+      alert('تم صرف السلفة بنجاح ✅ (سيتم خصمها من راتب الشهر)');
+      setShowAdvanceModal(false);
+      resetAdvanceForm();
+    } catch (e) {
+      console.error(e);
+      alert('حدث خطأ أثناء صرف السلفة');
+    } finally {
+      setIsSubmittingAdvance(false);
+    }
+  };
 
   const handleSendNote = async () => {
     if (!noteText.trim()) return;
@@ -937,7 +1046,7 @@ export default function POS() {
 <script>window.onload=()=>{setTimeout(()=>{window.print();window.onafterprint=()=>window.close();},500);}<\/script>
 </body></html>`;
 
-    openPrintWindow(html);
+    void printDocument('invoice', html);
   };
 
   // Opens payment method modal before checkout
@@ -1561,6 +1670,169 @@ export default function POS() {
         </div>
       )}
 
+      {showAdvanceModal && canEmployeeAdvance && (
+        <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-200 dark:border-slate-700 max-h-[90vh]">
+            <div className="p-6 bg-gradient-to-r from-amber-500 to-orange-500 text-white flex justify-between items-center shrink-0">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <HandCoins size={24} /> صرف سلفة لموظف
+              </h2>
+              <button onClick={() => { setShowAdvanceModal(false); resetAdvanceForm(); }} className="hover:bg-white/20 p-2 rounded-full transition">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-4 overflow-y-auto" dir="rtl">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">الموظف</label>
+                <select
+                  className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold"
+                  value={advanceEmpId}
+                  onChange={(e) => setAdvanceEmpId(e.target.value)}
+                >
+                  <option value="">— اختر الموظف —</option>
+                  {employees.filter((emp: any) => emp.is_active !== false).map((emp: any) => (
+                    <option key={emp.id} value={emp.id}>{emp.name}{emp.job_title ? ` (${emp.job_title})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">طريقة صرف السلفة (المبلغ)</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('cash')}</label>
+                    <input type="number" dir="ltr" placeholder="0.00"
+                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                      value={advanceCash} onChange={(e) => setAdvanceCash(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('visa')}</label>
+                    <input type="number" dir="ltr" placeholder="0.00"
+                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                      value={advanceVisa} onChange={(e) => setAdvanceVisa(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('wallet')}</label>
+                    <input type="number" dir="ltr" placeholder="0.00"
+                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                      value={advanceWallet} onChange={(e) => setAdvanceWallet(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 text-right">{payLabel('instapay')}</label>
+                    <input type="number" dir="ltr" placeholder="0.00"
+                      className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 font-bold text-right"
+                      value={advanceInstapay} onChange={(e) => setAdvanceInstapay(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-100 dark:bg-slate-700 rounded-xl p-3 flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-500 dark:text-slate-400">إجمالي السلفة:</span>
+                <span className="text-xl font-black text-amber-600">{advanceTotal.toLocaleString()} {storeSettings.currency}</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">سبب / ملاحظة السلفة</label>
+                <textarea
+                  value={advanceNote}
+                  onChange={(e) => setAdvanceNote(e.target.value)}
+                  placeholder="مثال: سلفة مقدمة على الراتب..."
+                  className="w-full h-20 bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none font-bold placeholder-gray-400"
+                />
+              </div>
+
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-900/20 rounded-xl px-3 py-2 text-center">سيتم خصم السلفة تلقائياً من راتب هذا الشهر للموظف.</p>
+
+              <button
+                onClick={handleAdvanceSubmit}
+                disabled={isSubmittingAdvance}
+                className="w-full font-black py-4 rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-white bg-amber-600 hover:bg-amber-700"
+              >
+                {isSubmittingAdvance ? 'جاري الصرف...' : <><HandCoins size={20} /> صرف السلفة</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBarcodeModal && canBarcodePrint && (
+        <div className="fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-200 dark:border-slate-700 max-h-[90vh]">
+            <div className="p-6 bg-gradient-to-r from-slate-700 to-slate-900 text-white flex justify-between items-center shrink-0">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <ScanLine size={24} /> طباعة باركود منتج
+              </h2>
+              <button onClick={() => { setShowBarcodeModal(false); setBarcodeSearch(''); setBarcodeProductId(''); setBarcodeCount('1'); }} className="hover:bg-white/20 p-2 rounded-full transition">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 flex flex-col gap-4 overflow-y-auto" dir="rtl">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">ابحث عن المنتج (بالاسم أو الباركود)</label>
+                <div className="relative">
+                  <Search size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    autoFocus
+                    value={barcodeSearch}
+                    onChange={(e) => { setBarcodeSearch(e.target.value); setBarcodeProductId(''); }}
+                    placeholder="اكتب اسم المنتج..."
+                    className="w-full bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl pr-10 pl-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-500 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
+                {barcodeMatches.length === 0 ? (
+                  <p className="text-center text-slate-400 py-6 text-sm font-bold">لا توجد منتجات مطابقة</p>
+                ) : barcodeMatches.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setBarcodeProductId(p.id); setBarcodeCount(String(Math.max(1, Math.floor(Number(p.stock_quantity) || 1)))); }}
+                    className={`w-full text-right px-4 py-2.5 flex items-center justify-between gap-2 transition ${barcodeProductId === p.id ? 'bg-slate-800 text-white' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                  >
+                    <span className="font-bold text-sm truncate">{p.name}</span>
+                    <span className={`text-[11px] font-mono shrink-0 ${barcodeProductId === p.id ? 'text-slate-200' : 'text-slate-400'}`}>{p.barcode || 'بدون باركود'}</span>
+                  </button>
+                ))}
+              </div>
+
+              {barcodeProduct && (
+                <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl p-3 flex items-center justify-between">
+                  <span className="text-sm font-bold text-slate-600 dark:text-slate-300 truncate">{barcodeProduct.name}</span>
+                  <span className="text-sm font-black text-slate-800 dark:text-slate-100 shrink-0">{barcodeProduct.sale_price.toLocaleString()} {storeSettings.currency}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">عدد الملصقات المطلوب طباعتها</label>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setBarcodeCount(String(Math.max(1, (parseInt(barcodeCount) || 1) - 1)))} className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200 font-black text-xl hover:bg-slate-200">−</button>
+                  <input
+                    type="number" min="1" dir="ltr"
+                    value={barcodeCount}
+                    onChange={(e) => setBarcodeCount(e.target.value)}
+                    className="flex-1 bg-gray-100 dark:bg-slate-700 dark:text-white border-none rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-slate-500 font-black text-center text-lg"
+                  />
+                  <button onClick={() => setBarcodeCount(String((parseInt(barcodeCount) || 0) + 1))} className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200 font-black text-xl hover:bg-slate-200">+</button>
+                </div>
+              </div>
+
+              <button
+                onClick={handlePrintBarcode}
+                disabled={!barcodeProduct}
+                className="w-full font-black py-4 rounded-2xl transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-white bg-slate-800 hover:bg-slate-900"
+              >
+                <Printer size={20} /> طباعة الباركود
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDayBudget && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3" onClick={() => setShowDayBudget(false)}>
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -2029,13 +2301,31 @@ export default function POS() {
               >
                 <MessageSquare size={20} />
               </button>
-              <button 
+              <button
                 onClick={() => setShowFinanceModal(true)}
                 className="w-12 h-12 flex items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors shadow-sm border border-emerald-100 dark:border-emerald-800/50"
                 title="معاملة مالية"
               >
                 <Wallet size={20} />
               </button>
+              {canEmployeeAdvance && (
+                <button
+                  onClick={() => setShowAdvanceModal(true)}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors shadow-sm border border-amber-100 dark:border-amber-800/50"
+                  title="صرف سلفة لموظف"
+                >
+                  <HandCoins size={20} />
+                </button>
+              )}
+              {canBarcodePrint && (
+                <button
+                  onClick={() => setShowBarcodeModal(true)}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/70 transition-colors shadow-sm border border-slate-200 dark:border-slate-700"
+                  title="طباعة باركود منتج"
+                >
+                  <ScanLine size={20} />
+                </button>
+              )}
             </div>
 
             {/* Center: Text & Badges */}

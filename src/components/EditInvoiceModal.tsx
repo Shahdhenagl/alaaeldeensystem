@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { X, Search, Plus, Minus, Trash2, Save, AlertCircle, RefreshCw } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { Order, OrderItem, Product } from '../store/useStore';
-import { openPrintWindow } from '../utils/printWindow';
+import { printDocument } from '../utils/printWindow';
 import { escapeHtml } from '../utils/escapeHtml';
 
 interface EditInvoiceModalProps {
@@ -128,7 +128,7 @@ export function EditInvoiceModal({ invoice, onClose, requireOtp, exchangeMode }:
       ${diffBlock}
       <div class="ft">شكراً لتعاملكم معنا</div>
     </div><script>window.onload=()=>{setTimeout(()=>{window.print();},400);}</script></body></html>`;
-    openPrintWindow(html);
+    void printDocument('invoice', html);
   };
 
   const handleSave = async () => {

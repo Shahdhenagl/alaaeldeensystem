@@ -8,6 +8,21 @@
  * Mobile: popups are blocked there, so we fall back to a hidden iframe and
  * trigger printing once ourselves (so it still prints from the phone).
  */
+import { printViaQz, type PrintKind } from './qzPrint';
+
+/**
+ * Print a document, preferring silent QZ Tray printing (to the printer mapped
+ * for this `kind` in settings) and falling back to the browser print window
+ * when QZ isn't enabled/available. Use this for all invoice/barcode printing.
+ */
+export async function printDocument(kind: PrintKind, html: string, features?: string): Promise<void> {
+  try {
+    const ok = await printViaQz(kind, html);
+    if (ok) return;
+  } catch { /* fall through to browser print */ }
+  openPrintWindow(html, features);
+}
+
 export function openPrintWindow(html: string, features = 'width=800,height=1000'): Window | null {
   const isMobile = typeof navigator !== 'undefined'
     && /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent);
