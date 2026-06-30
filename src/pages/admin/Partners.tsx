@@ -96,7 +96,7 @@ export default function Partners() {
   return (
     <div className="p-6 md:p-8 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Handshake className="text-indigo-600" size={30} /> الشركاء</h1>
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><Handshake className="text-indigo-600" size={30} /> الشركاء</h1>
         <p className="text-slate-500 mt-1 font-medium text-sm">نِسب الشركاء، الرصيد الافتتاحي، والإيداع/السحب لكل شريك</p>
       </div>
 

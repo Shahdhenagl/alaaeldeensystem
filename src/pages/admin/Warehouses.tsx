@@ -87,8 +87,8 @@ export default function Warehouses() {
   };
 
   return (
-    <div className="p-8" dir="rtl">
-      <div className="flex justify-between items-center mb-8">
+    <div className="p-4 md:p-8" dir="rtl">
+      <div className="flex flex-wrap gap-3 justify-between items-center mb-8">
         <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
           <WarehouseIcon size={28} className="text-indigo-600" />
           المخازن والتحويلات
@@ -139,7 +139,7 @@ export default function Warehouses() {
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-8">
         <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-lg font-black text-slate-800">كميات المنتجات حسب المخزن</h2>
-          <div className="relative w-72">
+          <div className="relative w-full sm:w-72">
             <Search className="absolute right-3 top-2.5 text-slate-400" size={18} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث عن منتج..."
               className="w-full bg-white border border-slate-200 rounded-xl py-2 pr-10 pl-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -216,7 +216,7 @@ export default function Warehouses() {
       {/* مودال التحويل */}
       {showTransfer && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-slate-200">
             <div className="p-6 border-b flex justify-between items-center bg-slate-50">
               <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><ArrowLeftRight size={22} className="text-indigo-600" /> تحويل كمية بين المخازن</h2>
               <button onClick={() => setShowTransfer(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-xl shadow-sm border border-slate-200"><X size={20} /></button>

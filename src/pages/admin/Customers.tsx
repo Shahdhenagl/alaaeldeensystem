@@ -300,16 +300,16 @@ export default function Customers() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex justify-between items-end mb-8">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <div className="flex flex-wrap justify-between items-end mb-8 gap-3">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-black text-slate-800 flex items-center gap-3">
             <User style={{ color: storeSettings.themeColor }} size={32} />
             قاعدة العملاء
           </h1>
           <p className="text-slate-500 mt-2 font-medium">إدارة بيانات العملاء، سجل المشتريات، والمديونيات المعلقة</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button 
             onClick={() => setIsAddCustomerModalOpen(true)}
             className="flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition shadow-lg hover:shadow-indigo-200"
@@ -332,8 +332,8 @@ export default function Customers() {
       </div>
 
       <div id="customers-table" className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[500px]">
-        <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-          <div className="relative w-1/3 min-w-[350px]">
+        <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+          <div className="relative w-full sm:w-1/3 sm:min-w-[350px]">
             <Search className="absolute right-4 top-3 text-slate-400" size={20} />
             <input
               type="text"
@@ -440,7 +440,7 @@ export default function Customers() {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
           <div id="customer-profile-modal" className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-300">
             {/* Modal Header */}
-            <div className="p-8 flex justify-between items-center border-b border-slate-100 relative overflow-hidden bg-white">
+            <div className="p-4 md:p-8 flex flex-wrap gap-3 justify-between items-center border-b border-slate-100 relative overflow-hidden bg-white">
                <div 
                 className="absolute top-0 right-0 w-32 h-32 opacity-5 pointer-events-none"
                 style={{ backgroundColor: storeSettings.themeColor, borderRadius: '0 0 0 100%' }}
@@ -503,7 +503,7 @@ export default function Customers() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2 items-center">
+              <div className="flex flex-wrap gap-2 items-center">
                 {isEditMode ? (
                   <>
                     <button 
@@ -545,7 +545,7 @@ export default function Customers() {
             </div>
 
             {/* Modal Content */}
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50">
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                 <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -642,6 +642,7 @@ export default function Customers() {
                     <FileText className="text-slate-400" size={18} />
                     <h3 className="font-black text-slate-800">سجل الطلبات والفواتير</h3>
                   </div>
+                <div className="overflow-x-auto">
                 <table className="w-full text-right text-sm">
                   <thead className="bg-slate-50 text-slate-400 font-bold">
                     <tr>
@@ -714,6 +715,7 @@ export default function Customers() {
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
               )}
 
@@ -725,7 +727,7 @@ export default function Customers() {
       {/* Add Customer Modal */}
       {isAddCustomerModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-300">
             {/* Modal Header */}
             <div className="p-8 border-b border-slate-100 flex justify-between items-center relative overflow-hidden">
               <div 

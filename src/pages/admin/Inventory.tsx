@@ -453,12 +453,12 @@ export default function Inventory() {
               </button>
             </div>
             <form onSubmit={submitProduct} className="p-6 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">اسم المنتج <span className="text-red-500">*</span></label>
                   <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={{ '--tw-ring-color': storeSettings.themeColor + '40' } as any} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none" />
                 </div>
-                <div className="col-span-2 relative group">
+                <div className="sm:col-span-2 relative group">
                   <div className="flex justify-between items-end mb-1">
                     <label className="block text-sm font-bold text-slate-700">الباركود</label>
                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md flex items-center gap-1 opacity-0 group-focus-within:opacity-100 transition-opacity">
@@ -509,7 +509,7 @@ export default function Inventory() {
                   <input type="number" min="0" step="0.01" value={formData.wholesale_price} onChange={e => setFormData({...formData, wholesale_price: parseFloat(e.target.value) || 0})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-purple-500" />
                 </div>
                 {hasWarehouses ? (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="block text-sm font-bold text-slate-700 mb-2">توزيع الكمية على المخازن</label>
                     <div className="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200">
                       {warehouses.map(w => (
@@ -535,7 +535,7 @@ export default function Inventory() {
                     {editingProductId && <p className="text-xs text-slate-400 mt-1">المُباع: <b>{soldMap.get(editingProductId) || 0}</b> · لنقل الكميات بين المخازن استخدم صفحة «المخازن».</p>}
                   </div>
                 ) : (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="block text-sm font-bold text-slate-700 mb-1">الكمية في المخزون</label>
                     <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.stock_quantity}
                       onChange={e => setFormData({...formData, stock_quantity: parseFloat(e.target.value) || 0})}
@@ -553,10 +553,10 @@ export default function Inventory() {
                     className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-amber-500"
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <p className="text-xs text-slate-400 -mt-1">ℹ️ هذه كمية وتكلفة المخزون الافتتاحي — بعدها يتم التحديث تلقائياً عبر فواتير المشتريات. يمكن تعديل سعر البيع لاحقاً.</p>
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <label className="block text-sm font-bold text-slate-700 mb-1">التصنيف</label>
                   <select value={formData.category_id} onChange={e => setFormData({...formData, category_id: e.target.value})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500">
                     {categories.map(c => (
@@ -578,7 +578,7 @@ export default function Inventory() {
 
       {/* CATEGORIES SECTION */}
       <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
             <Tag size={22} className="text-indigo-500" />
             التصنيفات
@@ -635,7 +635,7 @@ export default function Inventory() {
       </div>
 
       {/* DASHBOARD CONTENT */}
-      <div className="flex justify-between items-end mb-6">
+      <div className="flex flex-wrap justify-between items-end gap-3 mb-6">
         <div>
           <h2 className="text-xl font-black text-slate-800">المنتجات</h2>
         </div>
@@ -664,7 +664,7 @@ export default function Inventory() {
 
       <div id="inventory-table" className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[500px]">
         <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3 flex-wrap">
-          <div className="relative w-1/3 min-w-[300px]">
+          <div className="relative w-full md:w-1/3 md:min-w-[300px]">
             <Search className="absolute right-4 top-3 text-slate-400" size={20} />
               <input
                 type="text"
@@ -675,7 +675,7 @@ export default function Inventory() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <Tag className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" size={18} />
               <select

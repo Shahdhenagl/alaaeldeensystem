@@ -90,8 +90,8 @@ export default function Settings() {
           <img src={formData.logo} alt="Logo Preview" style={{ borderColor: formData.themeColor + '40' }} className="w-24 h-24 rounded-2xl border-2 border-dashed object-cover p-1 bg-slate-50" />
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="sm:col-span-2">
             <label className="block text-sm font-bold text-slate-700 mb-2">اسم المحل</label>
             <input 
               type="text" 
@@ -102,7 +102,7 @@ export default function Settings() {
             />
           </div>
           
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="block text-sm font-bold text-slate-700 mb-2">رابط أو صورة الشعار (Logo)</label>
             <div className="flex items-center gap-3">
               <input 
@@ -152,7 +152,7 @@ export default function Settings() {
             />
           </div>
 
-          <div className="col-span-2 md:col-span-1">
+          <div className="sm:col-span-2 md:col-span-1">
             <label className="block text-sm font-bold text-slate-700 mb-2">رقم الهاتف (الأساسي)</label>
             <input 
               type="text" 
@@ -164,7 +164,7 @@ export default function Settings() {
             />
           </div>
 
-          <div className="col-span-2 md:col-span-1">
+          <div className="sm:col-span-2 md:col-span-1">
             <label className="block text-sm font-bold text-slate-700 mb-2">رقم الهاتف (الإضافي)</label>
             <input 
               type="text" 
@@ -176,7 +176,7 @@ export default function Settings() {
             />
           </div>
 
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="block text-sm font-bold text-slate-700 mb-2">عنوان المحل</label>
             <input 
               type="text" 
@@ -187,7 +187,7 @@ export default function Settings() {
             />
           </div>
 
-          <div className="col-span-2">
+          <div className="sm:col-span-2">
             <label className="block text-sm font-bold text-slate-700 mb-2">رابط المقر على الخريطة (Location URL)</label>
             <input 
               type="text" 
@@ -229,7 +229,7 @@ export default function Settings() {
             <p className="text-[11px] text-slate-400 mt-1">يُستخدم لإضافة كود المراسلة الدولي تلقائياً (مصر 20، السعودية 966).</p>
           </div>
 
-          <div className="col-span-2 md:col-span-1">
+          <div className="sm:col-span-2 md:col-span-1">
             <label className="block text-sm font-bold text-slate-700 mb-2">رصيد الخزينة الابتدائي (رصيد البداية)</label>
             <div className="flex items-center gap-2">
               <input 
@@ -244,7 +244,7 @@ export default function Settings() {
             <p className="text-[11px] text-slate-400 mt-1">يُستخدم كحجر أساس لحسابات الخزينة والميزانية اليومية.</p>
           </div>
 
-          <div className="col-span-2 md:col-span-1">
+          <div className="sm:col-span-2 md:col-span-1">
             <label className="block text-sm font-bold text-slate-700 mb-2">لون هوية النظام الأولي</label>
             <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 py-2 px-4 rounded-xl transition">
               <input 
@@ -302,7 +302,7 @@ export default function Settings() {
         <div className="pt-6 border-t border-slate-100">
           <h2 className="text-lg font-black text-slate-800 mb-1">تسميات وسائل الدفع (المحافظ)</h2>
           <p className="text-slate-500 text-sm mb-4">سمِّ كل وسيلة بالاسم اللي تحبيه (مثلاً المحفظة → «فودافون كاش»). يظهر في الكاشير والإيصالات.</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([['cash', 'كاش'], ['visa', 'فيزا'], ['wallet', 'محفظة'], ['instapay', 'انستا باي']] as const).map(([k, def]) => {
               const labels = formData.paymentLabels || {};
               return (

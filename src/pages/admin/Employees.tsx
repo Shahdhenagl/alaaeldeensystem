@@ -517,7 +517,7 @@ export default function Employees() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-y-auto" dir="rtl">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-y-auto" dir="rtl">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
         <div>
@@ -579,7 +579,7 @@ export default function Employees() {
       {selectedProfileId && profileEmployee ? (
         <div className="space-y-6">
           {/* Profile Header */}
-          <div className="flex items-center justify-between bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => setSelectedProfileId(null)}
@@ -600,8 +600,8 @@ export default function Employees() {
                 <p className="text-slate-500 font-medium">{profileEmployee.job_title || 'بدون مسمى'} • {profileEmployee.phone}</p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <button 
+            <div className="flex flex-wrap gap-2">
+              <button
                 onClick={() => handleOpenLeaveModal(profileEmployee)}
                 disabled={!(profileEmployee.is_active ?? true)}
                 className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-sky-50 text-sky-600 font-bold hover:bg-sky-100 transition disabled:opacity-50 disabled:cursor-not-allowed"

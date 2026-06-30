@@ -274,10 +274,10 @@ export default function Financing() {
   });
 
   return (
-    <div className="p-8 space-y-6" dir="rtl">
+    <div className="p-4 sm:p-8 space-y-6" dir="rtl">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-800">السلف والجمعيات</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-800">السلف والجمعيات</h1>
           <p className="text-slate-500 mt-2 font-medium">ملفات مستقلة لكل سلفة أو جمعية، مع تحصيل وسداد جزئي وسجل معاملات واضح.</p>
         </div>
         <div className="flex gap-2">
@@ -321,7 +321,7 @@ export default function Financing() {
           </button>
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-2xl p-2 flex gap-2 w-fit shadow-sm">
+        <div className="bg-white border border-slate-100 rounded-2xl p-2 flex flex-wrap gap-2 w-fit shadow-sm">
           {[
             { value: 'all', label: 'الكل', count: statusCounts.all },
             { value: 'open', label: 'المفتوح', count: statusCounts.open },

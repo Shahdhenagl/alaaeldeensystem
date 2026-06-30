@@ -34,7 +34,7 @@ export default function OfflineInvoices() {
               <CloudOff size={16} />
               <span>إدارة حالة الاتصال</span>
             </div>
-            <h1 className="text-4xl font-black mb-3 tracking-tight">
+            <h1 className="text-3xl md:text-4xl font-black mb-3 tracking-tight">
               الفواتير الأوفلاين
             </h1>
             <p className="text-indigo-200/90 font-medium max-w-xl text-lg">

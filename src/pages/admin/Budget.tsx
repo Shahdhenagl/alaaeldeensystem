@@ -428,7 +428,7 @@ export default function Budget() {
       </details>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3">
             <Activity className="text-indigo-600" size={32} />
             الميزانية العامة
           </h1>
@@ -436,7 +436,7 @@ export default function Budget() {
         </div>
 
         {/* Filters and Actions */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="export-hide">
             <button 
               onClick={exportToPDF}

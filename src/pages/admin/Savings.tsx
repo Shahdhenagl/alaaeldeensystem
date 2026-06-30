@@ -128,7 +128,7 @@ export default function Savings() {
     <div className="p-6 md:p-8 space-y-6 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><PiggyBank className="text-indigo-600" size={30} /> خزنة الادخار</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3"><PiggyBank className="text-indigo-600" size={30} /> خزنة الادخار</h1>
           <p className="text-slate-500 mt-1 font-medium text-sm">تحويل بين خزنة المحل وخزنة الادخار (كل طريقة بطريقتها) — بتأكيد OTP للمدير</p>
         </div>
         <div className="bg-gradient-to-l from-indigo-600 to-purple-600 text-white rounded-2xl px-5 py-3 text-center">

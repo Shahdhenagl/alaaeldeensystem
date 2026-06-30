@@ -101,14 +101,14 @@ export default function Managers() {
   return (
     <div className="p-6 md:p-8 space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3">
           <Briefcase className="text-indigo-600" size={30} /> المدراء والسحوبات
         </h1>
         <p className="text-slate-500 mt-1 font-medium text-sm">سحب أموال من الخزنة باسم المدير (يُخصم من وسيلة الدفع ولا يُحذف)</p>
       </div>
 
       {/* إجمالي الخزنة الحقيقي */}
-      <div className="bg-gradient-to-l from-indigo-600 to-purple-600 text-white rounded-2xl p-5 flex items-center justify-between">
+      <div className="bg-gradient-to-l from-indigo-600 to-purple-600 text-white rounded-2xl p-5 flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-bold opacity-90">إجمالي المتاح بالخزنة (كل الوسائل)</span>
         <span className="text-2xl font-black">{METHODS.reduce((s, m) => s + (avail[m.key] || 0), 0).toFixed(2)} {cur}</span>
       </div>

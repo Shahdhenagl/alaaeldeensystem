@@ -908,7 +908,7 @@ export default function Finance() {
   const tc = storeSettings.themeColor;
 
   return (
-    <div id="finance-report" className="p-8 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-y-auto relative" dir="rtl">
+    <div id="finance-report" className="p-4 sm:p-8 max-w-7xl mx-auto h-[calc(100vh-2rem)] overflow-y-auto relative" dir="rtl">
       {/* Loading Overlay for Export */}
       {loading && (
         <div className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-md flex flex-col items-center justify-center gap-4 animate-in fade-in duration-300">
@@ -921,7 +921,7 @@ export default function Finance() {
       {/* Header & Date Picker */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 bg-white p-6 rounded-[32px] shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-800 flex items-center gap-3">
             <div className="p-2 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-200">
               <Wallet size={28} />
             </div>

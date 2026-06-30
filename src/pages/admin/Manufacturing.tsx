@@ -182,7 +182,7 @@ export default function Manufacturing() {
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3 text-center text-xs">
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-slate-400 font-bold">الإجمالي</div><div className="font-black text-slate-800 dark:text-slate-100">{mTotal.toFixed(2)}</div></div>
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-slate-400 font-bold">المدفوع</div><div className="font-black text-emerald-600">{mPaid.toFixed(2)}</div></div>
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-slate-400 font-bold">آجل (متبقّي)</div><div className={`font-black ${mRemaining > 0.01 ? 'text-red-600' : 'text-slate-800 dark:text-slate-100'}`}>{mRemaining.toFixed(2)}</div></div>
@@ -235,7 +235,7 @@ export default function Manufacturing() {
                 <Field label="للعرض (المحل)"><input className={input} type="number" placeholder="0" value={pDisplay} onChange={(e) => setPDisplay(e.target.value)} /></Field>
                 <Field label="للمستودع"><input className={input} type="number" placeholder="0" value={pWarehouse} onChange={(e) => setPWarehouse(e.target.value)} /></Field>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3 text-center text-xs">
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-emerald-600 font-bold">متاح للبيع</div><div className="font-black text-slate-800 dark:text-slate-100">{sellableNum}</div></div>
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-slate-400 font-bold">منها عرض</div><div className="font-black text-slate-800 dark:text-slate-100">{Math.min(dispNum, qtyNum)}</div></div>
                 <div className="bg-white dark:bg-slate-800 rounded-lg p-2"><div className="text-purple-600 font-bold">مخزن المصنع</div><div className="font-black text-purple-700">{factoryNum}</div></div>
