@@ -113,7 +113,9 @@ export default function Inventory() {
     const matchesHidden = showHidden ? p.is_hidden === true : !p.is_hidden; // showHidden=true → المخفيين فقط
     const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory;
     const matchesSeason = seasonFilter === 'all' || p.season === seasonFilter;
-    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesSeason;
+    // عند اختيار فرع محدد: اعرض فقط المنتجات التي بها كمية في هذا الفرع.
+    const matchesWarehouse = warehouseFilter === 'all' || availableStock(p, warehouseFilter) > 0;
+    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesSeason && matchesWarehouse;
   }).sort((a, b) => new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime());
   const hiddenCount = products.filter(p => p.is_hidden).length;
 
@@ -829,7 +831,17 @@ export default function Inventory() {
                         {formatQty(qtyOf(product), product.unit)}
                         <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
                       </button>
-                      <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
+                      {warehouses.length > 1 ? (
+                        <div className="text-[9px] text-slate-400 mt-1 flex flex-wrap justify-center gap-x-2">
+                          {warehouses.map(w => (
+                            <span key={w.id} className={availableStock(product, w.id) > 0 ? 'text-slate-500 font-bold' : ''}>
+                              {w.name} {formatQty(availableStock(product, w.id), product.unit)}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
+                      )}
                     </td>
 
                     <td className="p-4">
