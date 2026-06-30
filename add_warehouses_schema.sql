@@ -54,6 +54,20 @@ insert into warehouses (name, is_default)
 select 'المخزن الرئيسي', true
 where not exists (select 1 from warehouses);
 
+-- 6) سياسات الأمان (RLS): متاحة للمستخدمين المسجّلين فقط — مثل باقي الجداول
+alter table warehouses              enable row level security;
+alter table product_warehouse_stock enable row level security;
+alter table stock_transfers         enable row level security;
+
+drop policy if exists "authenticated full access" on warehouses;
+create policy "authenticated full access" on warehouses for all to authenticated using (true) with check (true);
+
+drop policy if exists "authenticated full access" on product_warehouse_stock;
+create policy "authenticated full access" on product_warehouse_stock for all to authenticated using (true) with check (true);
+
+drop policy if exists "authenticated full access" on stock_transfers;
+create policy "authenticated full access" on stock_transfers for all to authenticated using (true) with check (true);
+
 -- ============================================================
 -- ملاحظة: لا حاجة لترحيل (backfill) لأن كل الكميات الحالية
 -- موجودة في products.stock_quantity وتُحسب تلقائيًا للمخزن الرئيسي.
