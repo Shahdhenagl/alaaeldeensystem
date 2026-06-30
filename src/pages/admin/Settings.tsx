@@ -3,8 +3,30 @@ import { useStore } from '../../store/useStore';
 import { listPrinters, getQzConfig, saveQzConfig } from '../../utils/qzPrint';
 
 export default function Settings() {
-  const { storeSettings, updateSettings } = useStore();
+  const { storeSettings, updateSettings, changeAdminPassword } = useStore();
   const [formData, setFormData] = useState(storeSettings);
+  // تغيير كلمة سر لوحة التحكم
+  const [pwOld, setPwOld] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const handleChangePassword = async () => {
+    setPwMsg(null);
+    if (!pwOld || !pwNew || !pwConfirm) { setPwMsg({ type: 'err', text: 'برجاء ملء كل الحقول' }); return; }
+    if (pwNew !== pwConfirm) { setPwMsg({ type: 'err', text: 'تأكيد كلمة السر الجديدة غير مطابق' }); return; }
+    if (pwNew.length < 6) { setPwMsg({ type: 'err', text: 'كلمة السر الجديدة يجب أن تكون 6 أحرف على الأقل' }); return; }
+    setPwBusy(true);
+    const res = await changeAdminPassword(pwOld, pwNew);
+    setPwBusy(false);
+    if (res.ok) {
+      setPwMsg({ type: 'ok', text: 'تم تغيير كلمة السر بنجاح ✅ استخدم الكلمة الجديدة في الدخول القادم.' });
+      setPwOld(''); setPwNew(''); setPwConfirm('');
+    } else {
+      setPwMsg({ type: 'err', text: res.error || 'تعذّر تغيير كلمة السر' });
+    }
+  };
   const [printers, setPrinters] = useState<string[]>([]);
   const [printerStatus, setPrinterStatus] = useState('');
   const [discovering, setDiscovering] = useState(false);
@@ -375,6 +397,39 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      {/* ── تغيير كلمة سر لوحة التحكم ── */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-8 mt-6">
+        <h2 className="text-lg font-black text-slate-800 mb-1">تغيير كلمة سر لوحة التحكم</h2>
+        <p className="text-slate-500 text-sm mb-5">أدخل كلمة السر الحالية ثم الجديدة وتأكيدها. بعد الحفظ استخدم الكلمة الجديدة في تسجيل الدخول.</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">كلمة السر الحالية</label>
+            <input type="password" dir="ltr" value={pwOld} onChange={(e) => { setPwOld(e.target.value); setPwMsg(null); }}
+              className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition text-center font-bold" placeholder="••••••" />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">كلمة السر الجديدة</label>
+            <input type="password" dir="ltr" value={pwNew} onChange={(e) => { setPwNew(e.target.value); setPwMsg(null); }}
+              className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition text-center font-bold" placeholder="••••••" />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">تأكيد كلمة السر الجديدة</label>
+            <input type="password" dir="ltr" value={pwConfirm} onChange={(e) => { setPwConfirm(e.target.value); setPwMsg(null); }}
+              className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition text-center font-bold" placeholder="••••••" />
+          </div>
+        </div>
+        {pwMsg && (
+          <p className={`text-sm font-bold mt-4 ${pwMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>{pwMsg.text}</p>
+        )}
+        <div className="flex justify-end mt-5">
+          <button type="button" onClick={handleChangePassword} disabled={pwBusy}
+            style={{ backgroundColor: formData.themeColor, boxShadow: `0 4px 12px ${formData.themeColor}40` }}
+            className="text-white px-8 py-3 rounded-xl font-bold transition hover:opacity-90 disabled:opacity-60">
+            {pwBusy ? 'جارٍ التغيير...' : 'تغيير كلمة السر'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

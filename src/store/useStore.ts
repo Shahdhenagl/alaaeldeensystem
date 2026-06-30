@@ -53,6 +53,18 @@ async function provisionCashierAuth(id: string, password: string, table?: string
   }
 }
 
+// تسجيل دخول مع إعادة محاولة واحدة. أول طلب signInWithPassword بعد فتح الصفحة
+// قد يفشل أحياناً بسبب قفل/تهيئة جلسة GoTrue (فيرجع خطأ رغم صحة البيانات) —
+// كان المستخدم يضطر لإدخال كلمة السر مرتين. هنا نعيد المحاولة تلقائياً مرة واحدة.
+async function signInWithRetry(email: string, password: string) {
+  let { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    await new Promise((r) => setTimeout(r, 250));
+    ({ data, error } = await supabase.auth.signInWithPassword({ email, password }));
+  }
+  return { data, error };
+}
+
 // ─── Types ───────────────────────────────────────────────────
 export interface Product {
   id: string;
@@ -639,6 +651,7 @@ interface CashierStore {
   adminPermissions: string[] | null; // null = صلاحيات كاملة (المدير العام)
   login: (pin: string) => Promise<boolean>;
   loginAdminUser: (user: { email?: string; permissions?: string[] }, password: string) => Promise<boolean>;
+  changeAdminPassword: (oldPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   loginPOS: (name: string, password?: string) => Promise<boolean>;
   logoutPOS: () => Promise<void>;
@@ -958,7 +971,7 @@ export const useStore = create<CashierStore>((set, get) => ({
       console.error('VITE_ADMIN_EMAIL is not configured. Run the security setup (SECURITY_SETUP.md).');
       return false;
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: adminEmail, password: pin });
+    const { error } = await signInWithRetry(adminEmail, pin);
     if (error) return false;
     sessionStorage.setItem('cashier_admin_auth', 'true');
     sessionStorage.removeItem('admin_permissions'); // المدير العام = صلاحيات كاملة
@@ -972,7 +985,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   // دخول مستخدم لوحة تحكم بصلاحيات محددة
   loginAdminUser: async (user, password) => {
     if (!user?.email) return false;
-    const { error } = await supabase.auth.signInWithPassword({ email: user.email, password });
+    const { error } = await signInWithRetry(user.email, password);
     if (error) return false;
     const perms = Array.isArray(user.permissions) ? user.permissions : [];
     sessionStorage.setItem('cashier_admin_auth', 'true');
@@ -980,6 +993,30 @@ export const useStore = create<CashierStore>((set, get) => ({
     set({ isAdminAuthenticated: true, adminPermissions: perms });
     await get().loadAll(true);
     return true;
+  },
+
+  // تغيير كلمة سر لوحة التحكم للمستخدم الحالي: نتحقق من القديمة ثم نحدّث الجديدة.
+  // يعمل مع المدير العام (VITE_ADMIN_EMAIL) ومع مستخدمي اللوحة الفرعيين.
+  changeAdminPassword: async (oldPassword, newPassword) => {
+    if (!newPassword || newPassword.length < 6) {
+      return { ok: false, error: 'كلمة السر الجديدة يجب أن تكون 6 أحرف على الأقل' };
+    }
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData?.user?.email;
+    if (!email) return { ok: false, error: 'لا توجد جلسة دخول حالية. سجّل الدخول من جديد.' };
+    // التحقق من كلمة السر القديمة عبر إعادة تسجيل الدخول
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({ email, password: oldPassword });
+    if (verifyErr) return { ok: false, error: 'كلمة السر القديمة غير صحيحة' };
+    // تحديث كلمة السر في Supabase Auth
+    const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updErr) return { ok: false, error: updErr.message };
+    // لو كان مستخدم لوحة فرعي، نزامن العمود password في جدول admin_users أيضاً (يبدأ إيميله بـ admin-)
+    if (email.startsWith('admin-') && email.endsWith('@admin.local')) {
+      const id = email.slice('admin-'.length, -'@admin.local'.length);
+      await supabase.from('admin_users').update({ password: newPassword }).eq('id', id);
+      set((s) => ({ adminUsers: s.adminUsers.map((x) => (x.id === id ? { ...x, password: newPassword } : x)) }));
+    }
+    return { ok: true };
   },
 
   loadAdminUsers: async () => {
@@ -1025,7 +1062,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     const { cashiers } = get();
     const cashier = cashiers.find(c => c.name === name);
     if (!cashier || !cashier.email) return false;
-    const { error } = await supabase.auth.signInWithPassword({ email: cashier.email, password: password ?? '' });
+    const { error } = await signInWithRetry(cashier.email, password ?? '');
     if (error) return false;
     sessionStorage.setItem('cashier_pos_auth', 'true');
     sessionStorage.setItem('active_cashier_name', cashier.name);
