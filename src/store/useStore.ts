@@ -29,6 +29,24 @@ async function deductBranchStock(
   return next;
 }
 
+// عكس deductBranchStock: تُعاد كمية فرع غير رئيسي للمخزون (عند إرجاع/تأكيد فاتورة معلقة).
+async function restoreBranchStock(
+  items: { id: string; quantity: number }[],
+  warehouseId: string,
+  warehouseStock: Record<string, Record<string, number>>,
+): Promise<Record<string, Record<string, number>>> {
+  const next = { ...warehouseStock };
+  for (const item of items) {
+    const current = Number(next[item.id]?.[warehouseId]) || 0;
+    const updated = current + (item.quantity || 0);
+    next[item.id] = { ...(next[item.id] || {}), [warehouseId]: updated };
+    await supabase
+      .from('product_warehouse_stock')
+      .upsert({ product_id: item.id, warehouse_id: warehouseId, quantity: updated }, { onConflict: 'product_id,warehouse_id' });
+  }
+  return next;
+}
+
 // Creates/updates the Supabase Auth account for a cashier via the server
 // endpoint (which holds the service-role key), so a cashier added from the
 // admin panel can log in immediately. Best-effort: in local dev (no /api) or on
@@ -228,6 +246,38 @@ export interface Order {
   car_id?: string;
   warehouse_id?: string; // المخزن الذي تم البيع منه (غير معرّف = الكل/الإجمالي)
   exchange_data?: any; // بيانات الاستبدال: { before, after, oldTotal, newTotal, diff, method, date }
+}
+
+// فاتورة معلقة / محجوزة: تحجز الكمية من المخزون دون تسجيل بيع، ويمكن لاحقاً
+// تأكيد البيع (تُحمَّل في الكاشير وتُكمَّل) أو إرجاعها للمخزون. تُرجَّع تلقائياً
+// للمخزون بعد أسبوع إن لم يُتَّخذ إجراء.
+export interface HeldInvoiceItem {
+  id: string;
+  name: string;
+  barcode?: string;
+  quantity: number;
+  sale_price: number;
+  purchase_price?: number;
+  average_purchase_price?: number;
+  unit?: string;
+  category_id?: string;
+}
+
+export interface HeldInvoice {
+  id: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_custom_id?: string | null;
+  items: HeldInvoiceItem[];
+  total: number;
+  invoice_type: 'retail' | 'half' | 'wholesale';
+  warehouse_id?: string | null;
+  salesperson_id?: string | null;
+  salesperson_name?: string | null;
+  cashier_name?: string | null;
+  notes?: string | null;
+  created_at: string;
+  expires_at: string;
 }
 
 export interface Expense {
@@ -508,6 +558,18 @@ interface CashierStore {
   editOrder: (orderId: string, updatedData: Partial<Order>, updatedItems: OrderItem[], reason: string) => Promise<boolean>;
   markOrderExchanged: (orderId: string, exchangeData: any) => Promise<boolean>;
 
+  // Held / reserved invoices (فواتير معلقة)
+  heldInvoices: HeldInvoice[];
+  loadHeldInvoices: () => Promise<void>;
+  holdInvoice: (data: {
+    customerName?: string;
+    customerPhone?: string;
+    customerCustomId?: string;
+    notes?: string;
+  }) => Promise<boolean>;
+  confirmHeldInvoice: (id: string) => Promise<HeldInvoice | null>;
+  returnHeldInvoice: (id: string) => Promise<boolean>;
+  sweepExpiredHeldInvoices: () => Promise<void>;
 
   // Admin
   loadAnalyticsData: (startDate?: string, endDate?: string) => Promise<Order[]>;
@@ -943,6 +1005,7 @@ export const useStore = create<CashierStore>((set, get) => ({
   coupons: [],
   carSubscriptions: [],
   maintenanceAppointments: [],
+  heldInvoices: [],
   warehouses: [],
   warehouseStock: {},
   stockTransfers: [],
@@ -1276,6 +1339,9 @@ export const useStore = create<CashierStore>((set, get) => ({
       get().loadProductSuggestions();
       get().loadCashierNotes();
       get().loadCoupons();
+      get().loadHeldInvoices();
+      // إرجاع الفواتير المعلقة المنتهية (أكثر من أسبوع) للمخزون تلقائياً.
+      get().sweepExpiredHeldInvoices();
 
       // Setup Realtime subscriptions
       get().setupRealtime();
@@ -1848,6 +1914,299 @@ export const useStore = create<CashierStore>((set, get) => ({
     } catch (err) {
       console.warn("Network offline or Supabase connection failed. Falling back to offline checkout:", err);
       return executeOfflineCheckout();
+    }
+  },
+
+  // ── Held / reserved invoices (فواتير معلقة) ─────────────────
+  loadHeldInvoices: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('held_invoices')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        set({ heldInvoices: (data as any[]).map((h) => ({ ...h, items: Array.isArray(h.items) ? h.items : [] })) as HeldInvoice[] });
+      }
+    } catch (e) {
+      console.error('Held invoices table might not exist yet:', e);
+    }
+  },
+
+  // Saves the current cart as a held invoice and RESERVES the stock (deducts it
+  // from products.stock_quantity, like a real sale) so the quantity can't be
+  // sold twice. No invoice number is consumed until the sale is confirmed.
+  holdInvoice: async ({ customerName, customerPhone, customerCustomId, notes } = {}) => {
+    const state = get();
+    if (state.cart.length === 0) return false;
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        alert('حفظ الفواتير المعلقة غير متاح بدون اتصال بالإنترنت.');
+        return false;
+      }
+      const sp = state.salesperson;
+      const saleWarehouseId = state.selectedWarehouseId;
+      const saleWh = saleWarehouseId ? state.warehouses.find((w) => w.id === saleWarehouseId) : null;
+      const branchToDeduct = saleWh && !saleWh.is_default ? saleWh.id : null;
+      const total = state.cart.reduce((sum, i) => sum + i.sale_price * i.quantity, 0);
+      const items: HeldInvoiceItem[] = state.cart.map((i) => ({
+        id: i.id,
+        name: i.name,
+        barcode: i.barcode,
+        quantity: i.quantity,
+        sale_price: i.sale_price,
+        purchase_price: i.purchase_price,
+        average_purchase_price: i.average_purchase_price,
+        unit: i.unit,
+        category_id: i.category_id,
+      }));
+
+      const { data, error } = await supabase
+        .from('held_invoices')
+        .insert({
+          customer_name: customerName?.trim() || null,
+          customer_phone: customerPhone?.trim() || null,
+          customer_custom_id: customerCustomId?.trim() || null,
+          items,
+          total,
+          invoice_type: state.invoiceType,
+          warehouse_id: saleWarehouseId || null,
+          salesperson_id: sp?.id || null,
+          salesperson_name: sp?.name || null,
+          cashier_name: getActorName(state),
+          notes: notes?.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error('Hold invoice error:', error);
+        alert('تعذّر حفظ الفاتورة المعلقة: ' + (error?.message || 'خطأ غير معروف'));
+        return false;
+      }
+
+      // Reserve total stock.
+      for (const item of state.cart) {
+        const newQty = (state.products.find((p) => p.id === item.id)?.stock_quantity ?? 0) - item.quantity;
+        await supabase.from('products').update({ stock_quantity: Math.max(0, newQty) }).eq('id', item.id);
+      }
+      // Reserve branch share if selling from a specific non-default branch.
+      let nextWarehouseStock = state.warehouseStock;
+      if (branchToDeduct) {
+        nextWarehouseStock = await deductBranchStock(
+          state.cart.map((i) => ({ id: i.id, quantity: i.quantity })),
+          branchToDeduct,
+          state.warehouseStock,
+        );
+      }
+
+      const updatedProducts = state.products.map((p) => {
+        const cartItem = state.cart.find((c) => c.id === p.id);
+        return cartItem ? { ...p, stock_quantity: Math.max(0, p.stock_quantity - cartItem.quantity) } : p;
+      });
+
+      set({
+        heldInvoices: [{ ...(data as any), items } as HeldInvoice, ...state.heldInvoices],
+        products: updatedProducts,
+        warehouseStock: nextWarehouseStock,
+        cart: [],
+        invoiceType: 'retail',
+        salesperson: null,
+      });
+
+      new BroadcastChannel('cashier-sync').postMessage('sync_products');
+      return true;
+    } catch (err) {
+      console.error('Failed to hold invoice:', err);
+      alert('تعذّر حفظ الفاتورة المعلقة.');
+      return false;
+    }
+  },
+
+  // تأكيد البيع: تُعاد الكمية المحجوزة للمخزون ويُحذف سجل الحجز، وتُحمَّل الأصناف
+  // في السلة ليُكمل الكاشير عملية البيع والتحصيل والطباعة بشكل طبيعي (الكاشير
+  // عند الإتمام يخصم الكمية من جديد، فالنتيجة الصافية لا تغيّر المخزون).
+  confirmHeldInvoice: async (id) => {
+    const state = get();
+    const held = state.heldInvoices.find((h) => h.id === id);
+    if (!held) return null;
+    try {
+      const { error } = await supabase.from('held_invoices').delete().eq('id', id);
+      if (error) {
+        console.error('Confirm held invoice delete error:', error);
+        alert('تعذّر تأكيد الفاتورة المعلقة: ' + error.message);
+        return null;
+      }
+
+      // Return the reserved stock so the upcoming checkout deducts it cleanly.
+      for (const item of held.items) {
+        const { data: prodData } = await supabase.from('products').select('stock_quantity').eq('id', item.id).single();
+        const currentStock = (prodData as any)?.stock_quantity ?? 0;
+        await supabase.from('products').update({ stock_quantity: currentStock + item.quantity }).eq('id', item.id);
+      }
+      // Restore the branch share too, then re-select that branch so the upcoming
+      // checkout deducts from the same place it was reserved from.
+      const heldWh = held.warehouse_id ? state.warehouses.find((w) => w.id === held.warehouse_id) : null;
+      const branchToRestore = heldWh && !heldWh.is_default ? heldWh.id : null;
+      let nextWarehouseStock = state.warehouseStock;
+      if (branchToRestore) {
+        nextWarehouseStock = await restoreBranchStock(
+          held.items.map((i) => ({ id: i.id, quantity: i.quantity })),
+          branchToRestore,
+          state.warehouseStock,
+        );
+      }
+
+      const restoredProducts = state.products.map((p) => {
+        const it = held.items.find((i) => i.id === p.id);
+        return it ? { ...p, stock_quantity: p.stock_quantity + it.quantity } : p;
+      });
+
+      // Rebuild cart items from the held items + the latest product record.
+      const cartItems: OrderItem[] = held.items.map((it) => {
+        const prod = restoredProducts.find((p) => p.id === it.id);
+        const base: any = prod ? { ...prod } : {
+          id: it.id, name: it.name, barcode: it.barcode || '',
+          purchase_price: it.purchase_price || 0,
+          average_purchase_price: it.average_purchase_price || it.purchase_price || 0,
+          sale_price: it.sale_price, stock_quantity: it.quantity,
+          category_id: it.category_id || '', unit: it.unit || 'قطعة',
+        };
+        return { ...base, sale_price: it.sale_price, quantity: it.quantity, returned_quantity: 0 };
+      });
+
+      set({
+        heldInvoices: state.heldInvoices.filter((h) => h.id !== id),
+        products: restoredProducts,
+        warehouseStock: nextWarehouseStock,
+        selectedWarehouseId: held.warehouse_id || null,
+        cart: cartItems,
+        invoiceType: held.invoice_type || 'retail',
+        salesperson: held.salesperson_id ? { id: held.salesperson_id, name: held.salesperson_name || '' } : null,
+      });
+
+      new BroadcastChannel('cashier-sync').postMessage('sync_products');
+      return held;
+    } catch (err) {
+      console.error('Failed to confirm held invoice:', err);
+      alert('تعذّر تأكيد الفاتورة المعلقة.');
+      return null;
+    }
+  },
+
+  // إرجاع للمخزون: تُعاد الكمية المحجوزة ويُحذف سجل الحجز.
+  returnHeldInvoice: async (id) => {
+    const state = get();
+    const held = state.heldInvoices.find((h) => h.id === id);
+    if (!held) return false;
+    try {
+      const { error } = await supabase.from('held_invoices').delete().eq('id', id);
+      if (error) {
+        console.error('Return held invoice error:', error);
+        alert('تعذّر إرجاع الفاتورة للمخزون: ' + error.message);
+        return false;
+      }
+      for (const item of held.items) {
+        const { data: prodData } = await supabase.from('products').select('stock_quantity').eq('id', item.id).single();
+        const currentStock = (prodData as any)?.stock_quantity ?? 0;
+        await supabase.from('products').update({ stock_quantity: currentStock + item.quantity }).eq('id', item.id);
+      }
+      const heldWh = held.warehouse_id ? state.warehouses.find((w) => w.id === held.warehouse_id) : null;
+      const branchToRestore = heldWh && !heldWh.is_default ? heldWh.id : null;
+      let nextWarehouseStock = state.warehouseStock;
+      if (branchToRestore) {
+        nextWarehouseStock = await restoreBranchStock(
+          held.items.map((i) => ({ id: i.id, quantity: i.quantity })),
+          branchToRestore,
+          state.warehouseStock,
+        );
+      }
+      const restoredProducts = state.products.map((p) => {
+        const it = held.items.find((i) => i.id === p.id);
+        return it ? { ...p, stock_quantity: p.stock_quantity + it.quantity } : p;
+      });
+      set({
+        heldInvoices: state.heldInvoices.filter((h) => h.id !== id),
+        products: restoredProducts,
+        warehouseStock: nextWarehouseStock,
+      });
+      new BroadcastChannel('cashier-sync').postMessage('sync_products');
+      return true;
+    } catch (err) {
+      console.error('Failed to return held invoice:', err);
+      alert('تعذّر إرجاع الفاتورة للمخزون.');
+      return false;
+    }
+  },
+
+  // إرجاع تلقائي للفواتير المعلقة المنتهية (تجاوزت أسبوعاً) للمخزون. مستقل عن
+  // الحالة المحلية حتى يعمل بشكل صحيح حتى لو سبق التحميل.
+  sweepExpiredHeldInvoices: async () => {
+    try {
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('held_invoices')
+        .select('*')
+        .lt('expires_at', nowIso);
+      if (error || !data || data.length === 0) return;
+
+      const warehouses = get().warehouses;
+      // branch warehouseId -> productId -> qty to add back locally
+      const branchDelta: Record<string, Record<string, number>> = {};
+
+      for (const row of data as any[]) {
+        const { error: delErr } = await supabase.from('held_invoices').delete().eq('id', row.id);
+        if (delErr) { console.error('Sweep delete error:', delErr); continue; }
+        const items = Array.isArray(row.items) ? row.items : [];
+        for (const item of items) {
+          const { data: prodData } = await supabase.from('products').select('stock_quantity').eq('id', item.id).single();
+          const currentStock = (prodData as any)?.stock_quantity ?? 0;
+          await supabase.from('products').update({ stock_quantity: currentStock + (item.quantity || 0) }).eq('id', item.id);
+        }
+        // Restore the branch share too, reading the current value from the DB.
+        const wh = row.warehouse_id ? warehouses.find((w) => w.id === row.warehouse_id) : null;
+        if (wh && !wh.is_default) {
+          branchDelta[wh.id] = branchDelta[wh.id] || {};
+          for (const item of items) {
+            const { data: bs } = await supabase
+              .from('product_warehouse_stock')
+              .select('quantity')
+              .eq('product_id', item.id)
+              .eq('warehouse_id', wh.id)
+              .maybeSingle();
+            const current = Number((bs as any)?.quantity ?? 0);
+            const updated = current + (item.quantity || 0);
+            await supabase.from('product_warehouse_stock')
+              .upsert({ product_id: item.id, warehouse_id: wh.id, quantity: updated }, { onConflict: 'product_id,warehouse_id' });
+            branchDelta[wh.id][item.id] = (branchDelta[wh.id][item.id] || 0) + (item.quantity || 0);
+          }
+        }
+      }
+
+      const expiredIds = new Set((data as any[]).map((r) => r.id));
+      const expiredItemQty = new Map<string, number>();
+      for (const row of data as any[]) {
+        const items = Array.isArray(row.items) ? row.items : [];
+        for (const it of items) expiredItemQty.set(it.id, (expiredItemQty.get(it.id) || 0) + (it.quantity || 0));
+      }
+      set((s) => {
+        const nextWarehouseStock = { ...s.warehouseStock };
+        for (const [whId, prods] of Object.entries(branchDelta)) {
+          for (const [pid, qty] of Object.entries(prods)) {
+            const cur = Number(nextWarehouseStock[pid]?.[whId]) || 0;
+            nextWarehouseStock[pid] = { ...(nextWarehouseStock[pid] || {}), [whId]: cur + qty };
+          }
+        }
+        return {
+          heldInvoices: s.heldInvoices.filter((h) => !expiredIds.has(h.id)),
+          warehouseStock: nextWarehouseStock,
+          products: s.products.map((p) => expiredItemQty.has(p.id)
+            ? { ...p, stock_quantity: p.stock_quantity + (expiredItemQty.get(p.id) || 0) }
+            : p),
+        };
+      });
+      new BroadcastChannel('cashier-sync').postMessage('sync_products');
+    } catch (e) {
+      console.error('Failed to sweep expired held invoices:', e);
     }
   },
 
