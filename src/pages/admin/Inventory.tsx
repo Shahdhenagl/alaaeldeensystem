@@ -6,12 +6,15 @@ import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../
 import { generateBarcode, printBarcodeLabels } from '../../utils/printBarcodeLabels';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+// html2canvas-pro يدعم ألوان oklch() في Tailwind v4 (النسخة الأصلية تفشل معها وتكسر تصدير PDF).
+import html2canvas from 'html2canvas-pro';
 
 export default function Inventory() {
   const { products, categories, storeSettings, addProduct, updateProduct, orders, warehouses, setProductWarehouseStock, availableStock } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
+  // فلتر الفرع/المخزن: 'all' = كل المخازن، أو معرّف مخزن محدّد لعرض كميته فقط.
+  const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
   const [seasonFilter, setSeasonFilter] = useState<'all' | 'summer' | 'winter'>('all');
   const [warehouseQty, setWarehouseQty] = useState(0); // كمية المستودع عند إضافة منتج جديد
   // توزيع كمية المنتج على المخازن: warehouseId -> quantity
@@ -75,10 +78,20 @@ export default function Inventory() {
   });
 
   // الكمية حسب المخزن المختار: الكل = الإجمالي، المعرض = المعروض، المستودع = الباقي.
+  // ولو تم اختيار فرع/مخزن محدّد، نعرض كمية ذلك الفرع فقط (تتجاوز فلتر المستودع/المحل).
   const dispOf = (p: any) => Math.min(Number(p.display_quantity) || 0, Number(p.stock_quantity) || 0);
-  const qtyOf = (p: any) => stockLocation === 'display' ? dispOf(p)
-    : stockLocation === 'warehouse' ? ((Number(p.stock_quantity) || 0) - dispOf(p))
-    : (Number(p.stock_quantity) || 0);
+  const qtyOf = (p: any) => {
+    if (warehouseFilter !== 'all') return availableStock(p, warehouseFilter);
+    return stockLocation === 'display' ? dispOf(p)
+      : stockLocation === 'warehouse' ? ((Number(p.stock_quantity) || 0) - dispOf(p))
+      : (Number(p.stock_quantity) || 0);
+  };
+  const selectedWhName = warehouseFilter === 'all'
+    ? null
+    : (warehouses.find(w => w.id === warehouseFilter)?.name || 'مخزن');
+  // مسمّى عمود المخزون في الجدول/التصدير حسب الفلتر المختار.
+  const stockColLabel = selectedWhName
+    || (stockLocation === 'warehouse' ? 'المستودع' : stockLocation === 'display' ? 'المحل' : 'الكل');
   // كمية مباعة لكل منتج (صافي بعد المرتجع).
   const soldMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -303,7 +316,7 @@ export default function Inventory() {
       ['تقرير المخزون والمنتجات', '', '', '', '', ''],
       ['التاريخ', new Date().toLocaleDateString(), '', '', '', ''],
       [''],
-      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', `المخزون (${stockLocation === 'warehouse' ? 'المستودع' : stockLocation === 'display' ? 'المحل' : 'الكل'})`, 'مستودع', 'محل', 'مباع'],
+      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', `المخزون (${stockColLabel})`, 'مستودع', 'محل', 'مباع'],
       ...filteredProducts.map(p => [
         p.barcode,
         p.name,
@@ -436,12 +449,30 @@ export default function Inventory() {
         <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit">
           <span className="text-xs font-bold text-slate-500 px-2">المخزن:</span>
           {([['all', 'الكل'], ['warehouse', 'المستودع'], ['display', 'المحل']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setStockLocation(k)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${stockLocation === k ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={k} onClick={() => setStockLocation(k)} disabled={warehouseFilter !== 'all'}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed ${stockLocation === k ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
               {label}
             </button>
           ))}
         </div>
+        {hasWarehouses && (
+        <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit flex-wrap">
+          <span className="text-xs font-bold text-slate-500 px-2">الفرع/المخزن:</span>
+          <button onClick={() => setWarehouseFilter('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition ${warehouseFilter === 'all' ? 'bg-purple-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
+            كل المخازن
+          </button>
+          {warehouses.map(w => (
+            <button key={w.id} onClick={() => setWarehouseFilter(w.id)}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1.5 ${warehouseFilter === w.id ? 'bg-purple-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
+              {w.name}
+              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${w.is_default ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'} ${warehouseFilter === w.id ? 'bg-white/20 text-white' : ''}`}>
+                {w.is_default ? 'رئيسي' : 'فرعي'}
+              </span>
+            </button>
+          ))}
+        </div>
+        )}
       </div>
 
       {/* ADD PRODUCT MODAL */}
@@ -757,7 +788,7 @@ export default function Inventory() {
                 <th className="p-4 text-center">سعر الشراء</th>
                 <th className="p-4 text-center">متوسط الشراء</th>
                 <th className="p-4 text-center border-x border-slate-100 bg-slate-50">سعر البيع</th>
-                <th className="p-4 text-center border-l border-slate-100 bg-slate-50">المخزون المتوفر</th>
+                <th className="p-4 text-center border-l border-slate-100 bg-slate-50">المخزون المتوفر{warehouseFilter !== 'all' ? ` (${stockColLabel})` : ''}</th>
                 <th className="p-4 text-center">الإجراءات</th>
               </tr>
             </thead>
