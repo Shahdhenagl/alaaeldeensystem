@@ -361,13 +361,23 @@ export default function Settings() {
                 {printerStatus && <span className="text-xs font-bold text-slate-500">{printerStatus}</span>}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">🧾 طابعة الفواتير (الحرارية)</label>
                   <input
                     list="qz-printers"
                     value={qz.invoicePrinter || ''}
                     onChange={(e) => updateQz({ invoicePrinter: e.target.value })}
+                    className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition font-bold"
+                    placeholder="اختر أو اكتب اسم الطابعة"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">📄 طابعة A4 (فواتير A4)</label>
+                  <input
+                    list="qz-printers"
+                    value={qz.a4Printer || ''}
+                    onChange={(e) => updateQz({ a4Printer: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition font-bold"
                     placeholder="اختر أو اكتب اسم الطابعة"
                   />

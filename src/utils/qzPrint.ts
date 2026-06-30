@@ -12,11 +12,12 @@
  * "Allow" prompt in QZ Tray — tick "Remember" and it never asks again.
  */
 
-export type PrintKind = 'invoice' | 'barcode';
+export type PrintKind = 'invoice' | 'invoiceA4' | 'barcode';
 
 export interface QzConfig {
   enabled: boolean;
-  invoicePrinter: string; // printer name for receipts/invoices
+  invoicePrinter: string; // printer name for thermal receipts/invoices
+  a4Printer: string;      // printer name for A4 invoices (third type)
   barcodePrinter: string; // printer name for barcode labels
 }
 
@@ -29,10 +30,10 @@ function readStorage(): QzConfig {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      return { enabled: !!p.enabled, invoicePrinter: p.invoicePrinter || '', barcodePrinter: p.barcodePrinter || '' };
+      return { enabled: !!p.enabled, invoicePrinter: p.invoicePrinter || '', a4Printer: p.a4Printer || '', barcodePrinter: p.barcodePrinter || '' };
     }
   } catch { /* ignore */ }
-  return { enabled: false, invoicePrinter: '', barcodePrinter: '' };
+  return { enabled: false, invoicePrinter: '', a4Printer: '', barcodePrinter: '' };
 }
 
 let cfg: QzConfig = readStorage();
@@ -83,7 +84,9 @@ async function connect(): Promise<any> {
 /** True if QZ printing is enabled in settings AND a printer is mapped for this kind. */
 export function qzReadyFor(kind: PrintKind): boolean {
   if (!cfg.enabled) return false;
-  return kind === 'invoice' ? !!cfg.invoicePrinter : !!cfg.barcodePrinter;
+  if (kind === 'invoice') return !!cfg.invoicePrinter;
+  if (kind === 'invoiceA4') return !!cfg.a4Printer;
+  return !!cfg.barcodePrinter;
 }
 
 /** List installed printer names via QZ Tray (used by the Settings discovery button). */
@@ -100,6 +103,7 @@ interface PrintOptions {
 
 const KIND_DEFAULTS: Record<PrintKind, PrintOptions> = {
   invoice: { widthMm: 72, heightMm: null },
+  invoiceA4: { widthMm: 210, heightMm: 297 },
   barcode: { widthMm: 38, heightMm: 25 },
 };
 
@@ -110,17 +114,17 @@ const KIND_DEFAULTS: Record<PrintKind, PrintOptions> = {
  */
 export async function printViaQz(kind: PrintKind, html: string, optsOverride?: Partial<PrintOptions>): Promise<boolean> {
   if (!qzReadyFor(kind)) return false;
-  const printer = kind === 'invoice' ? cfg.invoicePrinter : cfg.barcodePrinter;
+  const printer = kind === 'invoice' ? cfg.invoicePrinter : kind === 'invoiceA4' ? cfg.a4Printer : cfg.barcodePrinter;
   const opts = { ...KIND_DEFAULTS[kind], ...optsOverride };
   try {
     const qz = await connect();
     const config = qz.configs.create(printer, {
       units: 'mm',
       size: opts.heightMm ? { width: opts.widthMm, height: opts.heightMm } : { width: opts.widthMm },
-      margins: 0,
+      margins: kind === 'invoiceA4' ? 6 : 0,
       scaleContent: true,
       rasterize: true,
-      colorType: 'grayscale',
+      colorType: kind === 'invoiceA4' ? 'color' : 'grayscale',
     });
     await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
     return true;

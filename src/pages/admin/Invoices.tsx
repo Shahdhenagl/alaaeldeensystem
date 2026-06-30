@@ -6,6 +6,8 @@ import { calculateInvoiceProfit } from '../../utils/invoiceProfit';
 import { calculateOrderReturnValue } from '../../utils/returns';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { printDocument } from '../../utils/printWindow';
+import { printA4Invoice, type A4InvoiceData } from '../../utils/printA4Invoice';
+import { choosePrintSize } from '../../utils/choosePrintSize';
 import * as XLSX from 'xlsx';
 
 import jsPDF from 'jspdf';
@@ -32,7 +34,9 @@ export default function Invoices() {
   const deletedOrders = useMemo(() => orders.filter((order) => order.is_deleted), [orders]);
   const visibleOrders = viewMode === 'deleted' ? deletedOrders : activeOrders;
 
-  const handlePrint = (order: any) => {
+  const handlePrint = async (order: any) => {
+    const size = await choosePrintSize();
+    if (!size) return;
     const printDate = new Date(order.created_at || Date.now()).toLocaleString('ar-EG', { calendar: 'gregory', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const isPayment = order.type === 'payment';
     const subtotal = isPayment ? order.total : order.items.reduce((sum: number, item: any) => sum + (item.sale_price * item.quantity), 0);
@@ -96,6 +100,57 @@ export default function Invoices() {
             <div class="info-item"><strong>المسؤول:</strong> <span>${escapeHtml(order.cashier_name || '—')}</span></div>
             <div class="info-item"><strong>التاريخ:</strong> <span>${printDate}</span></div>
          </div>`;
+
+    // ── A4 design ──────────────────────────────────────────────
+    if (size === 'a4') {
+      const remaining = (order.total || 0) - (order.paid_amount ?? order.total ?? 0);
+      const pays = [
+        { label: 'كاش', amount: order.paid_cash || 0 },
+        { label: 'فيزا', amount: order.paid_visa || 0 },
+        { label: 'محفظة', amount: order.paid_wallet || 0 },
+        { label: 'انستا باي', amount: order.paid_instapay || 0 },
+        { label: storeSettings.paymentLabels?.method5 || 'طريقة 5', amount: order.paid_method5 || 0 },
+        { label: storeSettings.paymentLabels?.method6 || 'طريقة 6', amount: order.paid_method6 || 0 },
+      ];
+      const data: A4InvoiceData = {
+        title: isPayment ? 'إيصال سداد' : 'فاتورة بيع',
+        invoiceNo: String(order.id),
+        date: printDate,
+        store: {
+          name: storeSettings.name, logo: storeSettings.logo, address: storeSettings.address,
+          phone: storeSettings.phone, phone2: storeSettings.phone2,
+          currency: storeSettings.currency, themeColor: storeSettings.themeColor,
+        },
+        party: order.customer
+          ? { role: 'العميل', name: order.customer.name, phone: order.customer.phone }
+          : { role: 'العميل', name: 'عميل نقدي' },
+        salesperson: order.salesperson_name || undefined,
+        items: cart.map((item: any, i: number) => ({
+          index: i + 1, name: item.name, qty: String(item.quantity),
+          price: item.sale_price, total: item.sale_price * item.quantity,
+        })),
+        summary: [
+          ...(!isPayment ? [
+            { label: 'المجموع الفرعي', value: `${subtotal.toFixed(2)} ${storeSettings.currency}` },
+            ...(order.coupon_code ? [{ label: `كوبون (${order.coupon_code})`, value: `- ${(order.discount_amount || 0).toFixed(2)} ${storeSettings.currency}`, kind: 'discount' as const }] : []),
+            ...((order.discount && !order.coupon_code) ? [{ label: 'خصم الفاتورة', value: `- ${order.discount.toFixed(2)} ${storeSettings.currency}`, kind: 'discount' as const }] : []),
+            ...(Number(storeSettings.taxRate) > 0 ? [{ label: `الضريبة (${storeSettings.taxRate}%)`, value: `${taxValue.toFixed(2)} ${storeSettings.currency}` }] : []),
+          ] : []),
+          { label: 'الإجمالي', value: `${(order.total || 0).toFixed(2)} ${storeSettings.currency}`, kind: 'total' as const },
+          ...(remaining > 0.5 ? [{ label: 'المتبقي (آجل)', value: `${remaining.toFixed(2)} ${storeSettings.currency}`, kind: 'danger' as const }] : []),
+          ...(order.customer ? [{ label: 'إجمالي المديونية الحالية', value: `${(debtAfter || 0).toFixed(2)} ${storeSettings.currency}`, kind: 'danger' as const }] : []),
+        ],
+        statusBanner: remaining > 0.5
+          ? { text: `متبقٍ للتحصيل: ${remaining.toFixed(2)} ${storeSettings.currency} · تم سداد: ${(order.paid_amount || 0).toFixed(2)}`, tone: 'debt' }
+          : { text: '✓ تم سداد الفاتورة بالكامل', tone: 'paid' },
+        payments: pays,
+        notes: (!isPayment && order.notes) ? order.notes : undefined,
+        qrUrl: qrCodeUrl,
+        footer: `شكراً لتعاملكم مع ${storeSettings.name}`,
+      };
+      printA4Invoice(data);
+      return;
+    }
 
     const html = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">

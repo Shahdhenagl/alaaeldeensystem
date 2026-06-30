@@ -10,6 +10,7 @@ import { ALL_PAYMENT_KEYS, activePaymentKeys, payLabelOf } from '../utils/paymen
 import { getUnitConfig, isFractionalUnit, formatQty } from '../utils/units';
 import { escapeHtml } from '../utils/escapeHtml';
 import { printDocument } from '../utils/printWindow';
+import { printA4Invoice, type A4InvoiceData } from '../utils/printA4Invoice';
 
 
 export default function POS() {
@@ -891,9 +892,49 @@ export default function POS() {
     }
   };
 
-  const printInvoice = (invId: string, orderDetails: any) => {
+  const printInvoice = (invId: string, orderDetails: any, size: 'thermal' | 'a4' = 'thermal') => {
     const currentSettings = { ...storeSettings };
     const printDate = new Date().toLocaleString('ar-EG', { calendar: 'gregory', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    // ── A4 design ──────────────────────────────────────────────
+    if (size === 'a4') {
+      const invoiceUrlA4 = `${window.location.origin}/view-invoice/${invId}`;
+      const remaining = (orderDetails.total || 0) - (orderDetails.paidAmount ?? orderDetails.total ?? 0);
+      const sp = orderDetails.splitPayments || {};
+      const data: A4InvoiceData = {
+        title: 'فاتورة بيع',
+        invoiceNo: String(invId),
+        date: printDate,
+        store: {
+          name: currentSettings.name, logo: currentSettings.logo, address: currentSettings.address,
+          phone: currentSettings.phone, phone2: currentSettings.phone2,
+          currency: currentSettings.currency, themeColor: currentSettings.themeColor,
+        },
+        party: { role: 'العميل', name: orderDetails.customerName || 'عميل نقدي', phone: orderDetails.customerPhone },
+        salesperson: orderDetails.salesperson || undefined,
+        items: orderDetails.cart.map((item: any, i: number) => ({
+          index: i + 1, name: item.name, qty: formatQty(item.quantity, item.unit),
+          price: item.sale_price, total: item.sale_price * item.quantity,
+        })),
+        summary: [
+          { label: 'المجموع الفرعي', value: `${(orderDetails.subtotal || 0).toFixed(2)} ${currentSettings.currency}` },
+          ...(orderDetails.couponCode ? [{ label: `كوبون (${orderDetails.couponCode})`, value: `- ${(orderDetails.couponDiscountAmount || 0).toFixed(2)} ${currentSettings.currency}`, kind: 'discount' as const }] : []),
+          ...((orderDetails.discount - (orderDetails.couponDiscountAmount || 0)) > 0.5 ? [{ label: 'خصم الفاتورة', value: `- ${(orderDetails.discount - (orderDetails.couponDiscountAmount || 0)).toFixed(2)} ${currentSettings.currency}`, kind: 'discount' as const }] : []),
+          ...(Number(currentSettings.taxRate) > 0 ? [{ label: `الضريبة (${currentSettings.taxRate}%)`, value: `${(orderDetails.tax || 0).toFixed(2)} ${currentSettings.currency}` }] : []),
+          { label: 'الإجمالي النهائي', value: `${(orderDetails.total || 0).toFixed(2)} ${currentSettings.currency}`, kind: 'total' },
+          ...(remaining > 0.5 ? [{ label: 'المتبقي (آجل)', value: `${remaining.toFixed(2)} ${currentSettings.currency}`, kind: 'danger' as const }] : []),
+        ],
+        statusBanner: remaining > 0.5
+          ? { text: `متبقٍ للتحصيل: ${remaining.toFixed(2)} ${currentSettings.currency} · تم سداد: ${(orderDetails.paidAmount || 0).toFixed(2)}`, tone: 'debt' }
+          : { text: '✓ تم سداد الفاتورة بالكامل', tone: 'paid' },
+        payments: activePayKeys.map((k) => ({ label: payLabel(k), amount: Number(sp[k]) || 0 })),
+        notes: orderDetails.notes || undefined,
+        qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(invoiceUrlA4)}`,
+        footer: `شكراً لتعاملكم مع ${currentSettings.name}`,
+      };
+      printA4Invoice(data);
+      return;
+    }
     const itemsHtml = orderDetails.cart.map((item: any, index: number) => {
       const prod = products.find(p => p.id === item.id);
       const hasDisc = prod && (prod.discount_price || 0) > 0 && Math.abs(item.sale_price - (prod.discount_price || 0)) < 0.01 && prod.sale_price > (prod.discount_price || 0);
@@ -1466,23 +1507,29 @@ export default function POS() {
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => printInvoice(lastInvoiceId, lastOrderDetails)}
-                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-slate-200"
+                    onClick={() => printInvoice(lastInvoiceId, lastOrderDetails, 'thermal')}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-slate-200"
                   >
-                    <Printer size={20} /> إعادة طباعة
+                    <Printer size={18} /> 🧾 طباعة حرارية
                   </button>
                   <button
-                    autoFocus
-                    onClick={() => {
-                      setShowSuccessModal(false);
-                      clearCart();
-                      focusById('pos-cust-name');
-                    }}
-                    className="flex-1 bg-slate-900 hover:bg-black text-white py-3.5 rounded-2xl font-bold transition-all focus:ring-4 focus:ring-slate-400"
+                    onClick={() => printInvoice(lastInvoiceId, lastOrderDetails, 'a4')}
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-indigo-200"
                   >
-                    إغلاق وفاتورة جديدة
+                    <Printer size={18} /> 📄 طباعة A4
                   </button>
                 </div>
+                <button
+                  autoFocus
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    clearCart();
+                    focusById('pos-cust-name');
+                  }}
+                  className="w-full bg-slate-900 hover:bg-black text-white py-3.5 rounded-2xl font-bold transition-all focus:ring-4 focus:ring-slate-400"
+                >
+                  إغلاق وفاتورة جديدة
+                </button>
               </div>
             </div>
           </div>

@@ -6,6 +6,8 @@ import { normalizeArabic } from '../../utils/textUtils';
 import { UNIT_OPTIONS, getUnitConfig, isFractionalUnit, formatQty } from '../../utils/units';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { openPrintWindow } from '../../utils/printWindow';
+import { printA4Invoice, type A4InvoiceData } from '../../utils/printA4Invoice';
+import { choosePrintSize } from '../../utils/choosePrintSize';
 import PaymentSplitInputs from '../../components/PaymentSplitInputs';
 import { activePaymentKeys, formToSplit, sumSplit, primaryMethod as primaryMethod_ } from '../../utils/paymentMethods';
 
@@ -298,7 +300,9 @@ export default function Suppliers() {
     }
   };
 
-  const printPurchaseInvoice = (inv: any) => {
+  const printPurchaseInvoice = async (inv: any) => {
+    const size = await choosePrintSize();
+    if (!size) return;
     const supplier = suppliers.find(s => s.id === inv.supplier_id);
     const isPaymentReceipt = inv.total === 0;
     
@@ -333,6 +337,46 @@ export default function Suppliers() {
     }).join('');
 
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`https://cashier-branch3.vercel.app/view-invoice/${inv.id}`)}`;
+
+    // ── A4 design ──────────────────────────────────────────────
+    if (size === 'a4') {
+      const data: A4InvoiceData = {
+        title: isPaymentReceipt ? 'إيصال سداد مورد' : 'فاتورة مشتريات',
+        invoiceNo: String(inv.invoice_number),
+        date: new Date(inv.created_at).toLocaleString('ar-EG', { calendar: 'gregory', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        store: {
+          name: storeSettings.name, logo: storeSettings.logo, address: storeSettings.address,
+          phone: storeSettings.phone, phone2: storeSettings.phone2,
+          currency: storeSettings.currency, themeColor: storeSettings.themeColor,
+        },
+        party: { role: 'المورد', name: supplier?.name || 'مورد محذوف', phone: supplier?.phone },
+        showItemsTable: !isPaymentReceipt,
+        items: (inv.items || []).map((item: any, i: number) => ({
+          index: i + 1,
+          name: products.find(p => p.id === item.product_id)?.name || 'منتج غير معروف',
+          qty: String(item.quantity), price: item.purchase_price, total: item.purchase_price * item.quantity,
+        })),
+        summary: [
+          ...(!isPaymentReceipt ? [{ label: 'إجمالي الفاتورة', value: `${inv.total.toFixed(2)} ${storeSettings.currency}`, kind: 'total' as const }] : []),
+          { label: 'المديونية قبل السداد', value: `${debtBefore.toFixed(2)} ${storeSettings.currency}` },
+          { label: 'المبلغ المدفوع', value: `${inv.paid_amount.toFixed(2)} ${storeSettings.currency}`, kind: 'success' as const },
+          { label: 'المتبقي للمورد', value: `${debtAfter.toFixed(2)} ${storeSettings.currency}`, kind: 'danger' as const },
+        ],
+        payments: [
+          { label: 'كاش', amount: inv.paid_cash || 0 },
+          { label: 'فيزا', amount: inv.paid_visa || 0 },
+          { label: 'محفظة', amount: inv.paid_wallet || 0 },
+          { label: 'انستا باي', amount: inv.paid_instapay || 0 },
+          { label: storeSettings.paymentLabels?.method5 || 'طريقة 5', amount: inv.paid_method5 || 0 },
+          { label: storeSettings.paymentLabels?.method6 || 'طريقة 6', amount: inv.paid_method6 || 0 },
+        ],
+        notes: inv.notes || undefined,
+        qrUrl: qrCodeUrl,
+        footer: `${storeSettings.name} - إدارة الموردين`,
+      };
+      printA4Invoice(data);
+      return;
+    }
 
     const html = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
