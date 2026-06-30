@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, Settings, LogOut, FileText, Users, BarChart3, Wallet, MessageCircle, CreditCard, Building2, BellRing, WifiOff, Ticket, PieChart, Scissors, Briefcase, Handshake, PiggyBank, ClipboardCheck, FileBarChart } from 'lucide-react';
+import { LayoutDashboard, Package, Settings, LogOut, FileText, Users, BarChart3, Wallet, MessageCircle, CreditCard, Building2, BellRing, WifiOff, Ticket, PieChart, Scissors, Briefcase, Handshake, PiggyBank, ClipboardCheck, FileBarChart, Warehouse } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { useEffect, useState } from 'react';
 
@@ -59,6 +59,7 @@ export default function AdminLayout() {
     ]},
     { section: 'المخزون والتصنيع', items: [
       { name: 'المخزون والمنتجات', path: '/admin/inventory', icon: Package },
+      { name: 'المخازن والتحويلات', path: '/admin/warehouses', icon: Warehouse },
       { name: 'الجرد والتسوية', path: '/admin/stocktake', icon: ClipboardCheck },
       { name: 'التصنيع', path: '/admin/manufacturing', icon: Scissors },
       { name: 'تنبيهات النواقص', path: '/admin/stock-alerts', icon: BellRing },

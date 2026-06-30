@@ -13,7 +13,7 @@ import { printDocument } from '../utils/printWindow';
 
 
 export default function POS() {
-  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct } = useStore();
+  const { products, categories, cart, addToCart, addToCartQty, removeFromCart, updateQuantity, updatePrice, clearCart, checkout, processReturn, storeSettings, orders, activeInvoiceId, customers, activeCashier, logoutPOS, isOnline, offlineQueue, offlineReturnsQueue, isSyncing, syncOfflineQueue, syncOfflineReturnsQueue, addCashierNote, addExpense, invoiceType, setInvoiceType, employees, salesperson, setSalesperson, deleteOrder, savingsTransfer, addEmployeeTransaction, updateProduct, warehouses, selectedWarehouseId, setSelectedWarehouse, availableStock } = useStore();
   // Transfer day-closing balance to savings (with manager OTP)
   const [showSaveXfer, setShowSaveXfer] = useState(false);
   const [saveXfer, setSaveXfer] = useState<Record<string, string>>({ cash: '', visa: '', wallet: '', instapay: '' });
@@ -2374,6 +2374,25 @@ export default function POS() {
           </div>
         </div>
 
+        {/* Warehouse Filter — اختر المخزن الذي تبيع منه */}
+        {warehouses.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar px-3 md:px-5 py-2 bg-indigo-50/40 dark:bg-slate-800/30 border-b border-gray-100 dark:border-slate-800">
+            <span className="text-[11px] font-black text-indigo-500 shrink-0 flex items-center gap-1">المخزن</span>
+            <button onClick={() => setSelectedWarehouse(null)}
+              style={selectedWarehouseId === null ? { background: storeSettings.themeColor } : {}}
+              className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${selectedWarehouseId === null ? 'text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
+              الكل (الإجمالي)
+            </button>
+            {warehouses.map((w) => (
+              <button key={w.id} onClick={() => setSelectedWarehouse(w.id)}
+                style={selectedWarehouseId === w.id ? { background: storeSettings.themeColor } : {}}
+                className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${selectedWarehouseId === w.id ? 'text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'}`}>
+                {w.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Categories Tabs */}
         <div className="relative group bg-slate-50/50 dark:bg-slate-800/20 border-b border-gray-100 dark:border-slate-800">
           <button 
@@ -2421,8 +2440,10 @@ export default function POS() {
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-900 border-l border-gray-100 dark:border-slate-800 relative">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredProducts.map((product) => {
-              const isOutOfStock = product.stock_quantity <= 0;
-              const isLowStock = product.stock_quantity > 0 && product.stock_quantity < 5;
+              // الكمية المتاحة في المخزن المختار (أو الإجمالي عند اختيار "الكل")
+              const avail = availableStock(product, selectedWarehouseId);
+              const isOutOfStock = avail <= 0;
+              const isLowStock = avail > 0 && avail < 5;
               const avgPrice = product.average_purchase_price || product.purchase_price || 0;
               const lastPrice = product.purchase_price || 0;
 
@@ -2433,7 +2454,7 @@ export default function POS() {
                   className={`bg-white dark:bg-slate-800 p-4 rounded-3xl shadow-sm hover:shadow-xl cursor-pointer transition-all duration-300 transform hover:-translate-y-1 flex flex-col justify-between border border-gray-100 dark:border-slate-700 ring-1 ring-black/5 dark:ring-white/5 relative overflow-hidden group ${isOutOfStock ? 'opacity-60 cursor-not-allowed grayscale' : ''}`}
                 >
                   <div className={`absolute top-0 right-0 rounded-bl-3xl rounded-tr-xl px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors ${isOutOfStock ? 'bg-slate-500' : isLowStock ? 'bg-red-500' : 'bg-green-500 dark:bg-green-600'}`}>
-                    {isOutOfStock ? 'نفذت' : formatQty(product.stock_quantity, product.unit)}
+                    {isOutOfStock ? 'نفذت' : formatQty(avail, product.unit)}
                   </div>
 
                   <div className="pt-2">
@@ -2916,7 +2937,8 @@ export default function POS() {
         const cfg = getUnitConfig(weightProduct.unit);
         const qty = computeWeightQty();
         const lineTotal = qty * weightProduct.sale_price;
-        const overStock = qty > weightProduct.stock_quantity;
+        const weightAvail = availableStock(weightProduct, selectedWarehouseId);
+        const overStock = qty > weightAvail;
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[300] flex items-center justify-center p-4" onClick={() => setWeightProduct(null)}>
             <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-sm animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
@@ -2924,7 +2946,7 @@ export default function POS() {
                 <div>
                   <h3 className="font-black text-lg text-slate-800 dark:text-white leading-tight">{weightProduct.name}</h3>
                   <p className="text-sm text-emerald-600 font-bold mt-1">{weightProduct.sale_price} {storeSettings.currency} / {cfg.label}</p>
-                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">المتاح: {formatQty(weightProduct.stock_quantity, weightProduct.unit)}</p>
+                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">المتاح: {formatQty(weightAvail, weightProduct.unit)}</p>
                 </div>
                 <button onClick={() => setWeightProduct(null)} className="text-slate-400 hover:text-slate-600 bg-slate-50 dark:bg-slate-700 p-2 rounded-xl"><X size={18} /></button>
               </div>

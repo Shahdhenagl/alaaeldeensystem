@@ -6,6 +6,7 @@ import POSLogin from './pages/POSLogin';
 import AdminLayout from './pages/admin/AdminLayout';
 import Overview from './pages/admin/Overview';
 import Inventory from './pages/admin/Inventory';
+import Warehouses from './pages/admin/Warehouses';
 import Invoices from './pages/admin/Invoices';
 import Customers from './pages/admin/Customers';
 import WhatsAppCampaigns from './pages/admin/WhatsAppCampaigns';
@@ -175,6 +176,7 @@ function App() {
             <Route path="overview" element={<Overview />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="inventory" element={<Inventory />} />
+            <Route path="warehouses" element={<Warehouses />} />
             <Route path="invoices" element={<Invoices />} />
             <Route path="customers" element={<Customers />} />
             <Route path="whatsapp-campaigns" element={<WhatsAppCampaigns />} />

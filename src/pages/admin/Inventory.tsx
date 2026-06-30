@@ -9,11 +9,14 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 export default function Inventory() {
-  const { products, categories, storeSettings, addProduct, updateProduct, orders } = useStore();
+  const { products, categories, storeSettings, addProduct, updateProduct, orders, warehouses, setProductWarehouseStock, availableStock } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
   const [seasonFilter, setSeasonFilter] = useState<'all' | 'summer' | 'winter'>('all');
   const [warehouseQty, setWarehouseQty] = useState(0); // كمية المستودع عند إضافة منتج جديد
+  // توزيع كمية المنتج على المخازن: warehouseId -> quantity
+  const [whQty, setWhQty] = useState<Record<string, number>>({});
+  const hasWarehouses = warehouses.length > 0;
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showCatForm, setShowCatForm] = useState(false);
   const [showLowStock, setShowLowStock] = useState(false);
@@ -177,6 +180,10 @@ export default function Inventory() {
       category_id: product.category_id,
       unit: product.unit || 'قطعة'
     });
+    // تهيئة توزيع المخازن للمنتج الحالي
+    const init: Record<string, number> = {};
+    for (const w of warehouses) init[w.id] = availableStock(product, w.id);
+    setWhQty(init);
     setShowAddModal(true);
   };
 
@@ -198,10 +205,13 @@ export default function Inventory() {
       unit: 'قطعة'
     });
     setWarehouseQty(0);
+    const init: Record<string, number> = {};
+    for (const w of warehouses) init[w.id] = 0;
+    setWhQty(init);
     setShowAddModal(true);
   };
 
-  const submitProduct = (e: React.FormEvent) => {
+  const submitProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) {
       alert("الرجاء إدخال اسم المنتج.");
@@ -221,16 +231,39 @@ export default function Inventory() {
       return;
     }
 
+    // توزيع الكمية على المخازن (لو فيه مخازن)
+    const branchAllocations: Record<string, number> = {};
+    let warehouseTotal = 0;
+    if (hasWarehouses) {
+      for (const w of warehouses) {
+        const q = Number(whQty[w.id]) || 0;
+        warehouseTotal += q;
+        if (!w.is_default) branchAllocations[w.id] = q;
+      }
+    }
+
     let payload = { ...formData, barcode };
     if (editingProductId) {
-      // المعروض لا يتجاوز الإجمالي
-      payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
-      updateProduct(editingProductId, payload);
+      if (hasWarehouses) {
+        payload = { ...payload, stock_quantity: warehouseTotal };
+        await updateProduct(editingProductId, payload);
+        await setProductWarehouseStock(editingProductId, branchAllocations);
+      } else {
+        // المعروض لا يتجاوز الإجمالي (السلوك القديم)
+        payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
+        await updateProduct(editingProductId, payload);
+      }
     } else {
-      // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو
-      const display = Number(formData.display_quantity) || 0;
-      payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
-      addProduct(payload);
+      if (hasWarehouses) {
+        payload = { ...payload, stock_quantity: warehouseTotal, display_quantity: 0 };
+        const created = await addProduct(payload);
+        if (created) await setProductWarehouseStock(created.id, branchAllocations);
+      } else {
+        // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو (السلوك القديم)
+        const display = Number(formData.display_quantity) || 0;
+        payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
+        await addProduct(payload);
+      }
       // طباعة ملصقات الباركود بعدد القطع المضافة على طابعة الباركود الحراري
       if (payload.stock_quantity > 0) {
         printBarcodeLabels({
@@ -488,7 +521,33 @@ export default function Inventory() {
                     ))}
                   </div>
                 </div>
-                {!editingProductId ? (
+                {hasWarehouses ? (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-bold text-slate-700 mb-2">توزيع الكمية على المخازن</label>
+                    <div className="space-y-2 bg-slate-50 rounded-xl p-3 border border-slate-200">
+                      {warehouses.map(w => (
+                        <div key={w.id} className="flex items-center gap-3">
+                          <span className={`flex-1 text-sm font-bold ${w.is_default ? 'text-indigo-700' : 'text-slate-600'}`}>
+                            {w.name}{w.is_default && <span className="text-[10px] text-indigo-400 mr-1">(رئيسي)</span>}
+                          </span>
+                          <input
+                            type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'}
+                            value={whQty[w.id] ?? 0}
+                            onChange={e => setWhQty({ ...whQty, [w.id]: parseFloat(e.target.value) || 0 })}
+                            className="w-32 bg-white border border-slate-200 py-2 px-3 rounded-lg focus:ring-2 focus:outline-none border-l-4 border-l-blue-500 text-center font-bold"
+                          />
+                        </div>
+                      ))}
+                      <div className="pt-2 mt-1 border-t border-slate-200 flex justify-between text-sm">
+                        <span className="font-bold text-slate-500">الإجمالي</span>
+                        <span className="font-black text-indigo-700">
+                          {warehouses.reduce((s, w) => s + (Number(whQty[w.id]) || 0), 0)} {getUnitConfig(formData.unit).label}
+                        </span>
+                      </div>
+                    </div>
+                    {editingProductId && <p className="text-xs text-slate-400 mt-1">المُباع: <b>{soldMap.get(editingProductId) || 0}</b> · لنقل الكميات بين المخازن استخدم صفحة «المخازن».</p>}
+                  </div>
+                ) : !editingProductId ? (
                   <>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">كمية المستودع</label>

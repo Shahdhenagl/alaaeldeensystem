@@ -9,6 +9,26 @@ function priceForType(product: any, type: string): number {
   return (product.discount_price && product.discount_price > 0) ? product.discount_price : product.sale_price;
 }
 
+// خصم كميات البيع من فرع غير رئيسي في قاعدة البيانات + تحديث الخريطة المحلية.
+// لا يُستدعى إلا عند البيع من مخزن فرعي محدّد (غير الرئيسي وغير "الكل").
+// الإجمالي products.stock_quantity يُخصم منه في مكان آخر؛ هنا نخصم حصة الفرع فقط.
+async function deductBranchStock(
+  cart: { id: string; quantity: number }[],
+  warehouseId: string,
+  warehouseStock: Record<string, Record<string, number>>,
+): Promise<Record<string, Record<string, number>>> {
+  const next = { ...warehouseStock };
+  for (const item of cart) {
+    const current = Number(next[item.id]?.[warehouseId]) || 0;
+    const updated = Math.max(0, current - item.quantity);
+    next[item.id] = { ...(next[item.id] || {}), [warehouseId]: updated };
+    await supabase
+      .from('product_warehouse_stock')
+      .upsert({ product_id: item.id, warehouse_id: warehouseId, quantity: updated }, { onConflict: 'product_id,warehouse_id' });
+  }
+  return next;
+}
+
 // Creates/updates the Supabase Auth account for a cashier via the server
 // endpoint (which holds the service-role key), so a cashier added from the
 // admin panel can log in immediately. Best-effort: in local dev (no /api) or on
@@ -52,6 +72,27 @@ export interface Product {
   unit: string; // وحدة المنتج: قطعة / كيلو / جرام / لتر ... (المخزون والسعر بهذه الوحدة)
   is_hidden?: boolean; // إخفاء المنتج من الكاشير دون حذفه
   color?: string; // لون المنتج (للملابس)
+}
+
+// ── المخازن المتعددة ─────────────────────────────────────────
+export interface Warehouse {
+  id: string;
+  name: string;
+  is_default: boolean;
+  created_at?: string;
+}
+
+export interface StockTransfer {
+  id: string;
+  product_id: string;
+  product_name?: string;
+  from_warehouse_id: string;
+  to_warehouse_id: string;
+  from_warehouse_name?: string;
+  to_warehouse_name?: string;
+  quantity: number;
+  note?: string;
+  created_at?: string;
 }
 
 // ── التصنيع ──────────────────────────────────────────────────
@@ -173,6 +214,7 @@ export interface Order {
   coupon_code?: string | null;
   discount_amount?: number;
   car_id?: string;
+  warehouse_id?: string; // المخزن الذي تم البيع منه (غير معرّف = الكل/الإجمالي)
   exchange_data?: any; // بيانات الاستبدال: { before, after, oldTotal, newTotal, diff, method, date }
 }
 
@@ -394,6 +436,23 @@ interface CashierStore {
   cashierNotes: CashierNote[];
   carSubscriptions: CarSubscription[];
   maintenanceAppointments: MaintenanceAppointment[];
+
+  // ── المخازن المتعددة ──
+  warehouses: Warehouse[];
+  // كمية الفروع غير الرئيسية فقط: productId -> warehouseId -> quantity
+  warehouseStock: Record<string, Record<string, number>>;
+  stockTransfers: StockTransfer[];
+  // مخزن الكاشير المختار حالياً (null = الكل / الإجمالي)
+  selectedWarehouseId: string | null;
+  setSelectedWarehouse: (id: string | null) => void;
+  addWarehouse: (name: string) => Promise<void>;
+  updateWarehouse: (id: string, name: string) => Promise<void>;
+  deleteWarehouse: (id: string) => Promise<void>;
+  transferStock: (productId: string, fromId: string, toId: string, qty: number, note?: string) => Promise<boolean>;
+  // تعيين توزيع كميات المنتج على الفروع (يُستخدم عند إضافة/تعديل منتج)
+  setProductWarehouseStock: (productId: string, allocations: Record<string, number>) => Promise<void>;
+  // الكمية المتاحة لمنتج في مخزن معيّن (null = الإجمالي)
+  availableStock: (product: Product, warehouseId: string | null) => number;
 
   // Data loading
   loadAll: (silent?: boolean) => Promise<void>;
@@ -741,6 +800,122 @@ export const useStore = create<CashierStore>((set, get) => ({
   invoiceType: 'retail',
   salesperson: null,
   setSalesperson: (sp) => set({ salesperson: sp }),
+
+  // ── المخازن المتعددة ───────────────────────────────────────
+  setSelectedWarehouse: (id) => set({ selectedWarehouseId: id }),
+
+  availableStock: (product, warehouseId) => {
+    const state = get();
+    if (!warehouseId) return Number(product.stock_quantity) || 0;
+    const wh = state.warehouses.find((w) => w.id === warehouseId);
+    const total = Number(product.stock_quantity) || 0;
+    const allocations = state.warehouseStock[product.id] || {};
+    const branchesSum = state.warehouses
+      .filter((w) => !w.is_default)
+      .reduce((s, w) => s + (Number(allocations[w.id]) || 0), 0);
+    if (wh?.is_default) return Math.max(0, total - branchesSum);
+    return Number(allocations[warehouseId]) || 0;
+  },
+
+  addWarehouse: async (name) => {
+    const isFirst = get().warehouses.length === 0;
+    const { data, error } = await supabase
+      .from('warehouses')
+      .insert({ name: name.trim(), is_default: isFirst })
+      .select()
+      .single();
+    if (error || !data) { alert('تعذّر إضافة المخزن'); return; }
+    set((s) => ({ warehouses: [...s.warehouses, data as Warehouse] }));
+  },
+
+  updateWarehouse: async (id, name) => {
+    const { error } = await supabase.from('warehouses').update({ name: name.trim() }).eq('id', id);
+    if (error) { alert('تعذّر تعديل المخزن'); return; }
+    set((s) => ({ warehouses: s.warehouses.map((w) => (w.id === id ? { ...w, name: name.trim() } : w)) }));
+  },
+
+  deleteWarehouse: async (id) => {
+    const wh = get().warehouses.find((w) => w.id === id);
+    if (wh?.is_default) { alert('لا يمكن حذف المخزن الرئيسي'); return; }
+    const { error } = await supabase.from('warehouses').delete().eq('id', id);
+    if (error) { alert('تعذّر حذف المخزن'); return; }
+    set((s) => {
+      const nextStock = { ...s.warehouseStock };
+      for (const pid of Object.keys(nextStock)) {
+        if (nextStock[pid] && id in nextStock[pid]) {
+          const copy = { ...nextStock[pid] };
+          delete copy[id];
+          nextStock[pid] = copy;
+        }
+      }
+      return {
+        warehouses: s.warehouses.filter((w) => w.id !== id),
+        warehouseStock: nextStock,
+        selectedWarehouseId: s.selectedWarehouseId === id ? null : s.selectedWarehouseId,
+      };
+    });
+  },
+
+  transferStock: async (productId, fromId, toId, qty, note) => {
+    const state = get();
+    const q = Number(qty);
+    if (!q || q <= 0 || fromId === toId) { alert('بيانات التحويل غير صحيحة'); return false; }
+    const product = state.products.find((p) => p.id === productId);
+    if (!product) return false;
+    const fromWh = state.warehouses.find((w) => w.id === fromId);
+    const toWh = state.warehouses.find((w) => w.id === toId);
+    if (!fromWh || !toWh) return false;
+    if (state.availableStock(product, fromId) < q) { alert('الكمية المتاحة في المخزن المصدر غير كافية'); return false; }
+
+    const allocations = { ...(state.warehouseStock[productId] || {}) };
+    // نخزّن الفروع غير الرئيسية فقط؛ المخزن الرئيسي محسوب تلقائياً
+    if (!fromWh.is_default) allocations[fromId] = (Number(allocations[fromId]) || 0) - q;
+    if (!toWh.is_default) allocations[toId] = (Number(allocations[toId]) || 0) + q;
+
+    // حفظ التغييرات في قاعدة البيانات
+    const rows = [fromId, toId]
+      .filter((wid) => { const w = state.warehouses.find((x) => x.id === wid); return w && !w.is_default; })
+      .map((wid) => ({ product_id: productId, warehouse_id: wid, quantity: Math.max(0, Number(allocations[wid]) || 0) }));
+    if (rows.length) {
+      const { error } = await supabase.from('product_warehouse_stock').upsert(rows, { onConflict: 'product_id,warehouse_id' });
+      if (error) { alert('تعذّر تنفيذ التحويل'); return false; }
+    }
+
+    const { data: trData } = await supabase.from('stock_transfers').insert({
+      product_id: productId,
+      product_name: product.name,
+      from_warehouse_id: fromId,
+      to_warehouse_id: toId,
+      from_warehouse_name: fromWh.name,
+      to_warehouse_name: toWh.name,
+      quantity: q,
+      note: note || null,
+    }).select().single();
+
+    set((s) => ({
+      warehouseStock: { ...s.warehouseStock, [productId]: allocations },
+      stockTransfers: trData ? [trData as StockTransfer, ...s.stockTransfers] : s.stockTransfers,
+    }));
+    return true;
+  },
+
+  setProductWarehouseStock: async (productId, allocations) => {
+    const state = get();
+    // نحتفظ بالفروع غير الرئيسية فقط (الرئيسي محسوب من الإجمالي)
+    const branchRows = state.warehouses
+      .filter((w) => !w.is_default)
+      .map((w) => ({ product_id: productId, warehouse_id: w.id, quantity: Math.max(0, Number(allocations[w.id]) || 0) }));
+    // امسح القديم ثم أضف غير الصفري
+    await supabase.from('product_warehouse_stock').delete().eq('product_id', productId);
+    const nonZero = branchRows.filter((r) => r.quantity > 0);
+    if (nonZero.length) {
+      await supabase.from('product_warehouse_stock').upsert(nonZero, { onConflict: 'product_id,warehouse_id' });
+    }
+    const localMap: Record<string, number> = {};
+    for (const r of branchRows) localMap[r.warehouse_id] = r.quantity;
+    set((s) => ({ warehouseStock: { ...s.warehouseStock, [productId]: localMap } }));
+  },
+
   orders: [],
   expenses: [],
   financingAccounts: [],
@@ -755,6 +930,10 @@ export const useStore = create<CashierStore>((set, get) => ({
   coupons: [],
   carSubscriptions: [],
   maintenanceAppointments: [],
+  warehouses: [],
+  warehouseStock: {},
+  stockTransfers: [],
+  selectedWarehouseId: null,
   invoiceCounter: 1,
   activeInvoiceId: '1',
   isLoading: false,
@@ -889,7 +1068,7 @@ export const useStore = create<CashierStore>((set, get) => ({
     // right after login). Used by login()/loginPOS().
     if (!silent) set({ isLoading: true, dbError: null });
     try {
-      const [settingsRes, categoriesRes, productsRes, customersRes, ordersRes, counterRes, cashiersRes, employeesRes, employeeTransactionsRes, employeeLeavesRes] =
+      const [settingsRes, categoriesRes, productsRes, customersRes, ordersRes, counterRes, cashiersRes, employeesRes, employeeTransactionsRes, employeeLeavesRes, warehousesRes, warehouseStockRes] =
         await Promise.all([
           supabase.from('store_settings').select('*').limit(1).maybeSingle(),
           supabase.from('categories').select('*').order('name'),
@@ -905,9 +1084,21 @@ export const useStore = create<CashierStore>((set, get) => ({
           supabase.from('employees').select('*').order('created_at', { ascending: false }),
           supabase.from('employee_transactions').select('*').order('created_at', { ascending: false }),
           supabase.from('employee_leaves').select('*').order('created_at', { ascending: false }),
+          supabase.from('warehouses').select('*').order('created_at', { ascending: true }),
+          supabase.from('product_warehouse_stock').select('*'),
         ]);
 
       const settings = settingsRes.data ? mapSettings(settingsRes.data as Record<string, unknown>) : get().storeSettings;
+
+      // المخازن + كميات الفروع
+      const warehouses = (warehousesRes.data ?? []) as Warehouse[];
+      const warehouseStock: Record<string, Record<string, number>> = {};
+      for (const row of ((warehouseStockRes.data ?? []) as Record<string, unknown>[])) {
+        const pid = row.product_id as string;
+        const wid = row.warehouse_id as string;
+        if (!warehouseStock[pid]) warehouseStock[pid] = {};
+        warehouseStock[pid][wid] = Number(row.quantity) || 0;
+      }
 
       const customers: Customer[] = ((customersRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
         id: c.id as string,
@@ -1000,6 +1191,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         employees: (employeesRes.data ?? []) as Employee[],
         employeeTransactions: (employeeTransactionsRes.data ?? []) as EmployeeTransaction[],
         employeeLeaves: (employeeLeavesRes.data ?? []) as EmployeeLeave[],
+        warehouses,
+        warehouseStock,
       });
 
       // Fetch expenses separately to avoid breaking the whole loadAll if the table is missing
@@ -1239,15 +1432,17 @@ export const useStore = create<CashierStore>((set, get) => ({
   // ── Cart ───────────────────────────────────────────────────
   addToCart: (product) =>
     set((state) => {
-      if (product.stock_quantity <= 0) return state;
+      // الحد الأقصى = المتاح في المخزن المختار حالياً (أو الإجمالي عند اختيار "الكل")
+      const cap = state.availableStock(product, state.selectedWarehouseId);
+      if (cap <= 0) return state;
       const step = unitStep(product.unit); // 1 للقطعة، 0.25 للوحدات الكسرية
       const existing = state.cart.find((i) => i.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stock_quantity) return state;
-        const next = Math.min(existing.quantity + step, product.stock_quantity);
+        if (existing.quantity >= cap) return state;
+        const next = Math.min(existing.quantity + step, cap);
         return { cart: state.cart.map((i) => (i.id === product.id ? { ...i, quantity: next } : i)) };
       }
-      const first = Math.min(step, product.stock_quantity);
+      const first = Math.min(step, cap);
       const price = priceForType(product, state.invoiceType);
       return { cart: [...state.cart, { ...product, sale_price: price, quantity: first, returned_quantity: 0 }] };
     }),
@@ -1255,14 +1450,15 @@ export const useStore = create<CashierStore>((set, get) => ({
   // إضافة منتج للسلة بكمية محددة (تُستخدم لإدخال الوزن من شاشة الكاشير)
   addToCartQty: (product, quantity) =>
     set((state) => {
-      if (product.stock_quantity <= 0 || quantity <= 0) return state;
+      const cap = state.availableStock(product, state.selectedWarehouseId);
+      if (cap <= 0 || quantity <= 0) return state;
       const min = unitMinQty(product.unit);
       const existing = state.cart.find((i) => i.id === product.id);
       if (existing) {
-        const next = Math.max(min, Math.min(existing.quantity + quantity, product.stock_quantity));
+        const next = Math.max(min, Math.min(existing.quantity + quantity, cap));
         return { cart: state.cart.map((i) => (i.id === product.id ? { ...i, quantity: next } : i)) };
       }
-      const qty = Math.max(min, Math.min(quantity, product.stock_quantity));
+      const qty = Math.max(min, Math.min(quantity, cap));
       const price = priceForType(product, state.invoiceType);
       return { cart: [...state.cart, { ...product, sale_price: price, quantity: qty, returned_quantity: 0 }] };
     }),
@@ -1273,7 +1469,8 @@ export const useStore = create<CashierStore>((set, get) => ({
     set((state) => {
       const product = state.products.find((p) => p.id === productId);
       if (!product) return state;
-      const validQty = Math.max(unitMinQty(product.unit), Math.min(quantity, product.stock_quantity));
+      const cap = state.availableStock(product, state.selectedWarehouseId);
+      const validQty = Math.max(unitMinQty(product.unit), Math.min(quantity, cap));
       return { cart: state.cart.map((i) => (i.id === productId ? { ...i, quantity: validQty } : i)) };
     }),
 
@@ -1301,6 +1498,11 @@ export const useStore = create<CashierStore>((set, get) => ({
     if (state.cart.length === 0 && type !== 'payment' && type !== 'previous_debt') return state.activeInvoiceId;
 
     const savedPaidAmount = type === 'payment' ? paidAmount : Math.min(total, paidAmount);
+
+    // المخزن المختار للبيع منه (null = الكل). نخصم حصة الفرع فقط إن كان فرعاً غير رئيسي.
+    const saleWarehouseId = state.selectedWarehouseId;
+    const saleWh = saleWarehouseId ? state.warehouses.find((w) => w.id === saleWarehouseId) : null;
+    const branchToDeduct = saleWh && !saleWh.is_default ? saleWh.id : null;
 
     const executeOfflineCheckout = () => {
       const offlineId = `OFF-${Date.now()}`;
@@ -1356,6 +1558,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         coupon_code: couponCode || null,
         discount_amount: discountAmount || 0,
         car_id: carId || undefined,
+        warehouse_id: saleWarehouseId || undefined,
         items: state.cart.map((i) => ({ ...i })),
         isOffline: true
       };
@@ -1368,6 +1571,19 @@ export const useStore = create<CashierStore>((set, get) => ({
         return cartItem ? { ...p, stock_quantity: Math.max(0, p.stock_quantity - cartItem.quantity) } : p;
       });
 
+      // خصم حصة الفرع محلياً (يُزامن مع القاعدة عند رفع الطابور)
+      let updatedWarehouseStock = state.warehouseStock;
+      if (branchToDeduct) {
+        updatedWarehouseStock = { ...state.warehouseStock };
+        for (const item of state.cart) {
+          const current = Number(updatedWarehouseStock[item.id]?.[branchToDeduct]) || 0;
+          updatedWarehouseStock[item.id] = {
+            ...(updatedWarehouseStock[item.id] || {}),
+            [branchToDeduct]: Math.max(0, current - item.quantity),
+          };
+        }
+      }
+
       const updatedCustomers = finalCustomer && !state.customers.find((c) => c.id === finalCustomer!.id)
         ? [finalCustomer, ...state.customers]
         : state.customers;
@@ -1379,6 +1595,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         salesperson: null,
         products: updatedProducts,
         customers: updatedCustomers,
+        warehouseStock: updatedWarehouseStock,
         offlineQueue: updatedQueue
       });
 
@@ -1482,7 +1699,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         notes: notes || null,
         coupon_code: couponCode || null,
         discount_amount: discountAmount || 0,
-        car_id: carId || null
+        car_id: carId || null,
+        warehouse_id: saleWarehouseId || null
       });
 
       if (orderError) {
@@ -1508,10 +1726,19 @@ export const useStore = create<CashierStore>((set, get) => ({
         console.error("Order Items Insert Error:", itemsError);
       }
 
-      // Update stock
+      // Update stock (الإجمالي)
       for (const item of state.cart) {
         const newQty = (state.products.find((p) => p.id === item.id)?.stock_quantity ?? 0) - item.quantity;
         await supabase.from('products').update({ stock_quantity: Math.max(0, newQty) }).eq('id', item.id);
+      }
+      // خصم حصة الفرع غير الرئيسي إن تم البيع من فرع محدّد
+      let nextWarehouseStock = state.warehouseStock;
+      if (branchToDeduct) {
+        nextWarehouseStock = await deductBranchStock(
+          state.cart.map((i) => ({ id: i.id, quantity: i.quantity })),
+          branchToDeduct,
+          state.warehouseStock,
+        );
       }
 
       // Build new order for local state
@@ -1534,7 +1761,8 @@ export const useStore = create<CashierStore>((set, get) => ({
         salesperson_id: sp?.id,
         salesperson_name: sp?.name,
         notes: notes || null,
-        car_id: carId || undefined
+        car_id: carId || undefined,
+        warehouse_id: saleWarehouseId || undefined
       };
 
       const updatedProducts = state.products.map((p) => {
@@ -1553,6 +1781,7 @@ export const useStore = create<CashierStore>((set, get) => ({
         salesperson: null,
         products: updatedProducts,
         customers: updatedCustomers,
+        warehouseStock: nextWarehouseStock,
         invoiceCounter: nextCounter,
         activeInvoiceId: nextCounter.toString(),
       });
