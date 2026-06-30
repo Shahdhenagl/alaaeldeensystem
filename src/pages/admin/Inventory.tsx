@@ -12,11 +12,8 @@ import html2canvas from 'html2canvas-pro';
 export default function Inventory() {
   const { products, categories, storeSettings, addProduct, updateProduct, orders, warehouses, setProductWarehouseStock, availableStock } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [stockLocation, setStockLocation] = useState<'all' | 'warehouse' | 'display'>('all');
   // فلتر الفرع/المخزن: 'all' = كل المخازن، أو معرّف مخزن محدّد لعرض كميته فقط.
   const [warehouseFilter, setWarehouseFilter] = useState<string>('all');
-  const [seasonFilter, setSeasonFilter] = useState<'all' | 'summer' | 'winter'>('all');
-  const [warehouseQty, setWarehouseQty] = useState(0); // كمية المستودع عند إضافة منتج جديد
   // توزيع كمية المنتج على المخازن: warehouseId -> quantity
   const [whQty, setWhQty] = useState<Record<string, number>>({});
   const hasWarehouses = warehouses.length > 0;
@@ -77,21 +74,15 @@ export default function Inventory() {
     unit: 'قطعة'
   });
 
-  // الكمية حسب المخزن المختار: الكل = الإجمالي، المعرض = المعروض، المستودع = الباقي.
-  // ولو تم اختيار فرع/مخزن محدّد، نعرض كمية ذلك الفرع فقط (تتجاوز فلتر المستودع/المحل).
-  const dispOf = (p: any) => Math.min(Number(p.display_quantity) || 0, Number(p.stock_quantity) || 0);
-  const qtyOf = (p: any) => {
-    if (warehouseFilter !== 'all') return availableStock(p, warehouseFilter);
-    return stockLocation === 'display' ? dispOf(p)
-      : stockLocation === 'warehouse' ? ((Number(p.stock_quantity) || 0) - dispOf(p))
-      : (Number(p.stock_quantity) || 0);
-  };
+  // الكمية: الإجمالي، أو كمية الفرع/المخزن المختار لو تم اختياره.
+  const qtyOf = (p: any) => warehouseFilter !== 'all'
+    ? availableStock(p, warehouseFilter)
+    : (Number(p.stock_quantity) || 0);
   const selectedWhName = warehouseFilter === 'all'
     ? null
     : (warehouses.find(w => w.id === warehouseFilter)?.name || 'مخزن');
   // مسمّى عمود المخزون في الجدول/التصدير حسب الفلتر المختار.
-  const stockColLabel = selectedWhName
-    || (stockLocation === 'warehouse' ? 'المستودع' : stockLocation === 'display' ? 'المحل' : 'الكل');
+  const stockColLabel = selectedWhName || 'الإجمالي';
   // كمية مباعة لكل منتج (صافي بعد المرتجع).
   const soldMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -112,17 +103,15 @@ export default function Inventory() {
     const matchesStock = showLowStock ? qtyOf(p) < 5 : true;
     const matchesHidden = showHidden ? p.is_hidden === true : !p.is_hidden; // showHidden=true → المخفيين فقط
     const matchesCategory = selectedCategory === 'all' || p.category_id === selectedCategory;
-    const matchesSeason = seasonFilter === 'all' || p.season === seasonFilter;
     // عند اختيار فرع محدد: اعرض فقط المنتجات التي بها كمية في هذا الفرع.
     const matchesWarehouse = warehouseFilter === 'all' || availableStock(p, warehouseFilter) > 0;
-    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesSeason && matchesWarehouse;
+    return matchesSearch && matchesStock && matchesHidden && matchesCategory && matchesWarehouse;
   }).sort((a, b) => new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime());
   const hiddenCount = products.filter(p => p.is_hidden).length;
 
-  // الإحصائيات حسب الفلاتر المختارة (الموسم + التصنيف + المخزن).
+  // الإحصائيات حسب الفلاتر المختارة (التصنيف + المخزن).
   const statsBase = products.filter(p => !p.is_hidden
-    && (selectedCategory === 'all' || p.category_id === selectedCategory)
-    && (seasonFilter === 'all' || p.season === seasonFilter));
+    && (selectedCategory === 'all' || p.category_id === selectedCategory));
   const totalStockValue = statsBase.reduce((acc, p) => acc + (qtyOf(p) * (p.average_purchase_price || p.purchase_price || 0)), 0);
   const lowStockCount = statsBase.filter(p => qtyOf(p) < 5).length;
   const totalItems = statsBase.reduce((acc, p) => acc + qtyOf(p), 0);
@@ -219,7 +208,6 @@ export default function Inventory() {
       category_id: categories[0]?.id || '',
       unit: 'قطعة'
     });
-    setWarehouseQty(0);
     const init: Record<string, number> = {};
     for (const w of warehouses) init[w.id] = 0;
     setWhQty(init);
@@ -257,26 +245,24 @@ export default function Inventory() {
       }
     }
 
-    let payload = { ...formData, barcode };
+    let payload = { ...formData, barcode, display_quantity: 0 };
     if (editingProductId) {
       if (hasWarehouses) {
         payload = { ...payload, stock_quantity: warehouseTotal };
         await updateProduct(editingProductId, payload);
         await setProductWarehouseStock(editingProductId, branchAllocations);
       } else {
-        // المعروض لا يتجاوز الإجمالي (السلوك القديم)
-        payload = { ...payload, display_quantity: Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0) };
+        // المخزون كرقم إجمالي واحد
         await updateProduct(editingProductId, payload);
       }
     } else {
       if (hasWarehouses) {
-        payload = { ...payload, stock_quantity: warehouseTotal, display_quantity: 0 };
+        payload = { ...payload, stock_quantity: warehouseTotal };
         const created = await addProduct(payload);
         if (created) await setProductWarehouseStock(created.id, branchAllocations);
       } else {
-        // الإجمالي = مستودع + معروض، والمعروض يتسجّل كما هو (السلوك القديم)
-        const display = Number(formData.display_quantity) || 0;
-        payload = { ...payload, stock_quantity: (Number(warehouseQty) || 0) + display, display_quantity: display };
+        // المخزون كرقم إجمالي واحد
+        payload = { ...payload, stock_quantity: Number(formData.stock_quantity) || 0 };
         await addProduct(payload);
       }
       // طباعة ملصقات الباركود بعدد القطع المضافة على طابعة الباركود الحراري
@@ -310,7 +296,6 @@ export default function Inventory() {
       category_id: categories[0]?.id || '',
       unit: 'قطعة'
     });
-    setWarehouseQty(0);
   };
 
   const exportExcel = () => {
@@ -318,7 +303,7 @@ export default function Inventory() {
       ['تقرير المخزون والمنتجات', '', '', '', '', ''],
       ['التاريخ', new Date().toLocaleDateString(), '', '', '', ''],
       [''],
-      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', `المخزون (${stockColLabel})`, 'مستودع', 'محل', 'مباع'],
+      ['الباركود', 'اسم المنتج', 'التصنيف', 'الوحدة', 'سعر الشراء', 'متوسط الشراء', 'سعر البيع', `المخزون (${stockColLabel})`, 'مباع'],
       ...filteredProducts.map(p => [
         p.barcode,
         p.name,
@@ -328,8 +313,6 @@ export default function Inventory() {
         p.average_purchase_price,
         p.sale_price,
         qtyOf(p),
-        Math.max(0, (Number(p.stock_quantity) || 0) - dispOf(p)),
-        dispOf(p),
         soldMap.get(p.id) || 0
       ])
     ];
@@ -437,26 +420,8 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* فلاتر: الموسم + المخزن */}
+      {/* فلتر: الفرع/المخزن */}
       <div className="flex items-center gap-3 flex-wrap mb-2">
-        <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit">
-          <span className="text-xs font-bold text-slate-500 px-2">الموسم:</span>
-          {([['all', 'الكل'], ['summer', 'صيفي'], ['winter', 'شتوي']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setSeasonFilter(k)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition ${seasonFilter === k ? 'bg-amber-500 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit">
-          <span className="text-xs font-bold text-slate-500 px-2">المخزن:</span>
-          {([['all', 'الكل'], ['warehouse', 'المستودع'], ['display', 'المحل']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setStockLocation(k)} disabled={warehouseFilter !== 'all'}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed ${stockLocation === k ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
         {hasWarehouses && (
         <div className="flex items-center gap-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-100 w-fit flex-wrap">
           <span className="text-xs font-bold text-slate-500 px-2">الفرع/المخزن:</span>
@@ -543,17 +508,6 @@ export default function Inventory() {
                   <label className="block text-sm font-bold text-slate-700 mb-1">سعر الجملة <span className="text-[10px] text-slate-400">(اختياري)</span></label>
                   <input type="number" min="0" step="0.01" value={formData.wholesale_price} onChange={e => setFormData({...formData, wholesale_price: parseFloat(e.target.value) || 0})} className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-purple-500" />
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold text-slate-700 mb-1">الموسم</label>
-                  <div className="flex gap-2">
-                    {([['summer','صيفي'],['winter','شتوي']] as const).map(([k,label]) => (
-                      <button type="button" key={k} onClick={() => setFormData({...formData, season: k})}
-                        className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition border ${formData.season === k ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 {hasWarehouses ? (
                   <div className="col-span-2">
                     <label className="block text-sm font-bold text-slate-700 mb-2">توزيع الكمية على المخازن</label>
@@ -580,38 +534,14 @@ export default function Inventory() {
                     </div>
                     {editingProductId && <p className="text-xs text-slate-400 mt-1">المُباع: <b>{soldMap.get(editingProductId) || 0}</b> · لنقل الكميات بين المخازن استخدم صفحة «المخازن».</p>}
                   </div>
-                ) : !editingProductId ? (
-                  <>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">كمية المستودع</label>
-                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={warehouseQty}
-                        onChange={e => setWarehouseQty(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">كمية المعروض (في المحل)</label>
-                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.display_quantity}
-                        onChange={e => setFormData({...formData, display_quantity: parseFloat(e.target.value) || 0})}
-                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-emerald-500" />
-                      <p className="text-xs text-slate-400 mt-1">الإجمالي = {(Number(warehouseQty) || 0) + (Number(formData.display_quantity) || 0)} {getUnitConfig(formData.unit).label} · الافتراضي كله في المستودع.</p>
-                    </div>
-                  </>
                 ) : (
-                  <>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">الإجمالي في المخزون</label>
-                      <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.stock_quantity}
-                        onChange={e => setFormData({...formData, stock_quantity: parseFloat(e.target.value) || 0})}
-                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">المعروض في المحل (النقل بين المستودع والمحل)</label>
-                      <input type="number" min="0" max={formData.stock_quantity} step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.display_quantity}
-                        onChange={e => setFormData({...formData, display_quantity: Math.min(parseFloat(e.target.value) || 0, formData.stock_quantity)})}
-                        className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-emerald-500" />
-                      <p className="text-xs text-slate-400 mt-1">المستودع: <b>{Math.max(0, (Number(formData.stock_quantity) || 0) - (Number(formData.display_quantity) || 0))}</b> · المعروض: <b>{Math.min(Number(formData.display_quantity) || 0, Number(formData.stock_quantity) || 0)}</b> · المُباع: <b>{soldMap.get(editingProductId) || 0}</b></p>
-                    </div>
-                  </>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">الكمية في المخزون</label>
+                    <input type="number" min="0" step={isFractionalUnit(formData.unit) ? '0.001' : '1'} value={formData.stock_quantity}
+                      onChange={e => setFormData({...formData, stock_quantity: parseFloat(e.target.value) || 0})}
+                      className="w-full bg-slate-50 border border-slate-200 py-3 px-4 rounded-xl focus:ring-2 focus:outline-none border-l-4 border-l-blue-500" />
+                    {editingProductId && <p className="text-xs text-slate-400 mt-1">المُباع: <b>{soldMap.get(editingProductId) || 0}</b></p>}
+                  </div>
                 )}
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">تكلفة شراء الـ{getUnitConfig(formData.unit).label} <span className="text-[10px] text-slate-400">(اختياري)</span></label>
@@ -831,7 +761,7 @@ export default function Inventory() {
                         {formatQty(qtyOf(product), product.unit)}
                         <Edit2 size={14} className="opacity-0 group-hover:opacity-100" />
                       </button>
-                      {warehouses.length > 1 ? (
+                      {warehouses.length > 1 && (
                         <div className="text-[9px] text-slate-400 mt-1 flex flex-wrap justify-center gap-x-2">
                           {warehouses.map(w => (
                             <span key={w.id} className={availableStock(product, w.id) > 0 ? 'text-slate-500 font-bold' : ''}>
@@ -839,8 +769,6 @@ export default function Inventory() {
                             </span>
                           ))}
                         </div>
-                      ) : (
-                        <div className="text-[9px] text-slate-400 mt-1">مستودع {Math.max(0, (Number(product.stock_quantity) || 0) - dispOf(product))} · محل {dispOf(product)}</div>
                       )}
                     </td>
 

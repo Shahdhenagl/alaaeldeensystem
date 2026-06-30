@@ -59,7 +59,6 @@ export default function POS() {
     } catch { alert('تعذّر تنفيذ التحويل'); }
     setSaveXferBusy(false);
   };
-  const [posSeason, setPosSeason] = useState<'all' | 'summer' | 'winter'>('all');
   const [historyToday, setHistoryToday] = useState(true);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewExchange, setViewExchange] = useState<any>(null);
@@ -1281,8 +1280,7 @@ export default function POS() {
     (p) => {
       const normalizedName = normalizeArabic(p.name);
       const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => normalizedName.includes(term)) || (p.barcode && p.barcode.includes(searchQuery));
-      const matchesSeason = posSeason === 'all' || p.season === posSeason;
-      return !p.is_hidden && (activeCategory === 'all' || p.category_id === activeCategory) && matchesSearch && matchesSeason;
+      return !p.is_hidden && (activeCategory === 'all' || p.category_id === activeCategory) && matchesSearch;
     }
   );
 
@@ -2456,22 +2454,13 @@ export default function POS() {
           </div>
         </header>
 
-        {/* Invoice type + season bar */}
+        {/* Invoice type bar */}
         <div className="flex flex-col lg:flex-row lg:items-center gap-2 lg:gap-5 px-3 py-2 border-b border-gray-100 dark:border-slate-800">
           <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
             <span className="text-[11px] font-bold text-slate-400 shrink-0">الفاتورة</span>
             {([['retail', 'قطاعي'], ['half', 'نص جملة'], ['wholesale', 'جملة']] as const).filter(([k]) => k === 'retail' || perm('wholesale')).map(([k, label]) => (
               <button key={k} onClick={() => setInvoiceType(k)}
                 className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${invoiceType === k ? 'bg-purple-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
-            <span className="text-[11px] font-bold text-slate-400 shrink-0">الموسم</span>
-            {([['all', 'الكل'], ['summer', 'صيفي'], ['winter', 'شتوي']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setPosSeason(k)}
-                className={`shrink-0 px-4 py-2 rounded-xl text-xs font-black transition ${posSeason === k ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'}`}>
                 {label}
               </button>
             ))}
