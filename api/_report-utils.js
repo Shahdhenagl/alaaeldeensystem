@@ -79,21 +79,31 @@ export async function sendTelegramText(text) {
   if (!token || !chatId) throw new Error('Missing Telegram environment variables');
 
   // TELEGRAM_CHAT_ID may be a comma-separated list to notify several people.
+  // Send to every recipient independently: one bad/unstarted chat id must NOT
+  // abort delivery to the valid ones. Only throw if ALL recipients failed.
   const chatIds = String(chatId).split(',').map((s) => s.trim()).filter(Boolean);
   let lastResult = null;
+  let anyOk = false;
+  const failures = [];
   for (const cid of chatIds) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: cid,
-        text: text.slice(0, 3900),
-        disable_web_page_preview: false,
-      }),
-    });
-    lastResult = await response.json();
-    if (!response.ok) throw new Error(JSON.stringify(lastResult));
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: cid,
+          text: text.slice(0, 3900),
+          disable_web_page_preview: false,
+        }),
+      });
+      lastResult = await response.json();
+      if (response.ok) anyOk = true;
+      else failures.push(`${cid}: ${lastResult?.description || response.status}`);
+    } catch (e) {
+      failures.push(`${cid}: ${String(e)}`);
+    }
   }
+  if (!anyOk) throw new Error(`All Telegram recipients failed → ${failures.join(' | ')}`);
   return lastResult;
 }
 
